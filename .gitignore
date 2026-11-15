@@ -1,0 +1,13 @@
+# Binarios y objetos
+build/
+bomberman
+bomberman_t6
+test_base
+*.o
+
+# Logs de ejecución y de pruebas
+logs/
+
+# Editores
+.vscode/
+*.swp
