@@ -52,7 +52,6 @@ int map_load(const char *path, shared_state_t *st)
         return -1;
     }
 
-    char line[LINE_LEN];
     char *grid[MAX_Y];
     int row = 0, cols = -1;
     int bomber_count = 0;
