@@ -1,0 +1,22 @@
+[P0] caso
+[P0] mapa inicial
+[P0] los 3 procesos hijos están listos
+==================== TICK 1 ====================
+[P0] inicio: tick 1
+[P0] acción: turno -> P2 enemy_process
+[P0] bombas: turno -> P3 bomb_process
+[P0] cierre: sin eventos
+[P0] estado:
+==================== TICK 2 ====================
+[P0] inicio: tick 2
+[P0] acción: turno -> P2 enemy_process
+[P0] bombas: turno -> P3 bomb_process
+[P0] cierre: sin eventos
+[P0] estado:
+==================== TICK 9 ====================
+[P0] inicio: tick 9
+[P0] acción: turno -> P1 bomber_process
+[P0] bombas: turno -> P3 bomb_process
+[P0] cierre: sin eventos
+[P0] estado:
+RESULTADO LIMITE DE TICKS
