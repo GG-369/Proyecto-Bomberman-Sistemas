@@ -10,7 +10,7 @@
  *   tick_thread      : paso 1, global_tick++ y aplica SET_PRIORITY pendientes.
  *   signal_thread    : pasos 2 y 3, sem_post al proceso elegido y a P3, y
  *                      espera sem_turn_done de cada uno.
- *   event_thread     : paso 4, cierre del tick.
+ *   event_thread     : paso 4, procesa colisión y daño, puntaje y fin del juego.
  *
  * Coordinación interna: semáforos privados de P0 (sem_init con pshared = 0)
  * en pares go_X / done_X. scheduler_thread hace sem_post(go_X) y espera
@@ -24,6 +24,8 @@
  *     sem_wait(go_signal), es decir, cuando ya fue escrito.
  *   - prioridades leídas y modificadas a la vez -> m_state (y m_mailbox
  *     para los buzones, tomado ANTES que m_state según el orden global).
+ *   - event_thread actualiza bomber_lives/game_over mientras
+ *     scheduler_thread los lee -> m_state.
  */
 #include "common.h"
 
@@ -37,6 +39,8 @@
 extern volatile sig_atomic_t g_interrupted;
 
 #define MAX_CHILDREN 4
+#define BOARD_LINES  (MAX_Y + 2)
+#define CHILD_CHECK_SECONDS 2
 
 typedef struct {
     shared_state_t *st;
@@ -50,9 +54,10 @@ typedef struct {
     sem_t go_signal, done_signal;
     sem_t go_event, done_event;
 
-    /* stop se escribe ANTES de un sem_post y se lee DESPUÉS del sem_wait
-     * correspondiente: el semáforo ordena el acceso. */
+    /* stop y child_failed se escriben ANTES de un sem_post y se leen
+     * DESPUÉS del sem_wait correspondiente: el semáforo ordena el acceso. */
     int stop;
+    int child_failed;
 
     /* Solo los usa scheduler_thread. */
     int last_turn;          /* para el desempate Round Robin */
@@ -69,6 +74,9 @@ static const char *child_name(int i)
     return (i >= 0 && i < MAX_CHILDREN) ? names[i] : "?";
 }
 
+/* ------------------------------------------------------------------ */
+/* Espera a un hijo sin quedar bloqueado para siempre si el hijo murió */
+/* ------------------------------------------------------------------ */
 static void report_child_status(int i, int status)
 {
     if (WIFEXITED(status))
@@ -77,6 +85,48 @@ static void report_child_status(int i, int status)
     else if (WIFSIGNALED(status))
         log_line("[P0] waitpid: %s (PID %d) terminó por la señal %d (%s)",
                  child_name(i), (int)g.children[i], WTERMSIG(status), strsignal(WTERMSIG(status)));
+}
+
+/* Devuelve 1 si algún hijo terminó antes de tiempo. */
+static int check_children(void)
+{
+    for (int i = 0; i < g.n_children; i++) {
+        if (g.reaped[i])
+            continue;
+        pid_t r = waitpid(g.children[i], &g.status[i], WNOHANG);
+        if (r == -1) {
+            perror("waitpid(WNOHANG)");
+        } else if (r == g.children[i]) {
+            g.reaped[i] = 1;
+            log_line("[P0] ERROR: %s terminó inesperadamente", child_name(i));
+            report_child_status(i, g.status[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* sem_wait con tiempo límite: cada 2 s revisa que los hijos sigan vivos. */
+static int wait_child_sem(sem_t *s)
+{
+    for (;;) {
+        struct timespec ts;
+        if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
+            perror("clock_gettime");
+            return -1;
+        }
+        ts.tv_sec += CHILD_CHECK_SECONDS;
+        if (sem_timedwait(s, &ts) == 0)
+            return 0;
+        if (errno == EINTR)
+            continue;
+        if (errno != ETIMEDOUT) {
+            perror("sem_timedwait");
+            return -1;
+        }
+        if (check_children())
+            return -1;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -203,6 +253,10 @@ static void *scheduler_thread(void *arg)
         /* Pasos 2 y 3: signal_thread despierta al elegido y luego a P3. */
         sem_post_checked(&g.go_signal);
         sem_wait_retry(&g.done_signal);
+        if (g.child_failed) {
+            set_game_over(st, RESULT_ERROR);
+            break;
+        }
 
         /* Paso 4: cierre */
         sem_post_checked(&g.go_event);
@@ -211,7 +265,10 @@ static void *scheduler_thread(void *arg)
         /* Bonus: P4 dibuja el estado al final del tick. */
         if (st->render_enabled) {
             sem_post_checked(&st->sem_render);
-            sem_wait_retry(&st->sem_render_done);
+            if (wait_child_sem(&st->sem_render_done) == -1) {
+                set_game_over(st, RESULT_ERROR);
+                break;
+            }
         }
         sleep_ms(st->tick_ms);
     }
@@ -242,12 +299,17 @@ static void *signal_thread(void *arg)
 
         /* Fase de acción: solo uno de P1 o P2. */
         sem_post_checked(turn == TURN_BOMBER ? &st->sem_bomber_turn : &st->sem_enemy_turn);
-        sem_wait_retry(&st->sem_turn_done);
+        if (wait_child_sem(&st->sem_turn_done) == -1) {
+            g.child_failed = 1;
+            sem_post_checked(&g.done_signal);
+            continue;
+        }
 
         /* Fase de bombas: P3 en TODOS los ticks, sin competir por prioridad. */
         log_line("[P0] bombas: turno -> P3 bomb_process (todos los ticks)");
         sem_post_checked(&st->sem_bomb_turn);
-        sem_wait_retry(&st->sem_turn_done);
+        if (wait_child_sem(&st->sem_turn_done) == -1)
+            g.child_failed = 1;
 
         sem_post_checked(&g.done_signal);
     }
@@ -257,22 +319,139 @@ static void *signal_thread(void *arg)
 /* ------------------------------------------------------------------ */
 /* Paso 4: event_thread                                                */
 /* ------------------------------------------------------------------ */
-/* Versión inicial del cierre: solo evalúa el límite de ticks. */
+
+/* Dibuja el tablero y la tabla de bombas. Precondición: m_pos, m_map y
+ * m_state tomados (en ese orden). */
+static int format_board(const shared_state_t *st, char lines[BOARD_LINES][MAX_X + 80])
+{
+    char snap[MAX_Y][MAX_X + 1];
+    map_snapshot(st, snap);
+    int n = 0;
+    for (int y = 0; y < st->map_h; y++) {
+        char side[64] = "";
+        if (y == 0)
+            snprintf(side, sizeof side, "bombas activas: %d", st->active_bombs);
+        else if (y <= MAX_BOMBS) {
+            int b = y - 1;
+            if (st->bomb_timer[b] > 0)
+                snprintf(side, sizeof side, "  bomba (%d, %d) timer %d",
+                         st->bomb_x[b], st->bomb_y[b], st->bomb_timer[b]);
+        }
+        snprintf(lines[n++], MAX_X + 80, "     %.*s   %.60s", MAX_X, snap[y], side);
+    }
+    return n;
+}
+
+static void append(char *dst, size_t len, const char *text)
+{
+    size_t used = strlen(dst);
+    if (used > 0 && used + 3 < len) {
+        strncat(dst, "; ", len - used - 1);
+        used += 2;
+    }
+    strncat(dst, text, len - used - 1);
+}
+
 static void close_tick(void)
 {
     shared_state_t *st = g.st;
-    int result = RESULT_NONE;
+    char events[160] = "";
+    char tmp[96];
+    char board[BOARD_LINES][MAX_X + 80];
+    char summary[256];
+    char positions[96] = "";
 
+    /* Orden global: m_pos -> m_map -> m_events -> m_state.
+     * Se toman todos porque el cierre necesita una foto consistente de
+     * posiciones, mapa, eventos y estado. */
+    lock(&st->m_pos);
+    lock(&st->m_map);
+    lock(&st->m_events);
     lock(&st->m_state);
+
     int tick = st->global_tick;
-    if (tick >= st->max_ticks) {
+    int collision = st->collision_detected;
+    int coll_id   = st->collision_enemy_id;
+    int blast     = st->blast_hit_bomber;
+
+    /* Vidas: como máximo una por tick, aunque haya colisión Y explosión. */
+    if (collision || blast) {
+        if (st->bomber_lives > 0)
+            st->bomber_lives--;
+        if (collision && blast)
+            snprintf(tmp, sizeof tmp, "colisión con enemigo %d Y explosión en el mismo tick: -1 vida (solo una)",
+                     coll_id + 1);
+        else if (collision)
+            snprintf(tmp, sizeof tmp, "colisión con enemigo %d: -1 vida", coll_id + 1);
+        else
+            snprintf(tmp, sizeof tmp, "Bomberman alcanzado por una explosión: -1 vida");
+        append(events, sizeof events, tmp);
+    }
+    for (int i = 0; i < NUM_ENEMIES; i++) {
+        if (st->blast_hit_enemy[i] && st->enemy_alive[i]) {
+            st->enemy_alive[i] = 0;
+            st->enemies_alive--;
+            snprintf(tmp, sizeof tmp, "enemigo %d eliminado (+%d)", i + 1, SCORE_PER_ENEMY);
+            append(events, sizeof events, tmp);
+        }
+        st->blast_hit_enemy[i] = 0;           /* el receptor limpia la bandera */
+    }
+    st->collision_detected = 0;
+    st->blast_hit_bomber   = 0;
+
+    st->score = st->blocks_destroyed * SCORE_PER_BLOCK +
+                (st->initial_enemies - st->enemies_alive) * SCORE_PER_ENEMY;
+
+    /* Condiciones de finalización (sección 11). */
+    int result = RESULT_NONE;
+    if (st->bomber_lives <= 0)
+        result = RESULT_DEFEAT;
+    else if (st->enemies_alive == 0)
+        result = RESULT_VICTORY;
+    else if (st->bomber_moves_done && st->enemy_moves_done && st->active_bombs == 0)
+        result = RESULT_NO_MOVES;
+    else if (tick >= st->max_ticks)
         result = RESULT_MAX_TICKS;
+    if (result != RESULT_NONE) {
         st->game_over = 1;
         st->game_result = result;
     }
-    unlock(&st->m_state);
 
-    log_line("[P0] cierre: tick %d", tick);
+    snprintf(st->last_events, sizeof st->last_events, "%s", events[0] ? events : "sin eventos");
+    int n_lines = format_board(st, board);
+    size_t off = 0;
+    for (int i = 0; i < NUM_ENEMIES && off < sizeof positions; i++) {
+        int w;
+        if (st->enemy_alive[i])
+            w = snprintf(positions + off, sizeof positions - off, "%s%c(%d,%d)",
+                         i ? " " : "", 'A' + i, st->enemy_x[i], st->enemy_y[i]);
+        else
+            w = snprintf(positions + off, sizeof positions - off, "%s%c(-)", i ? " " : "", 'A' + i);
+        if (w > 0)
+            off += (size_t)w;
+    }
+    snprintf(summary, sizeof summary,
+             "RESUMEN tick=%d turno=%s bomber=(%d,%d) enemigos=[%s] vidas=%d vivos=%d "
+             "bombas=%d bloques=%d puntaje=%d prio=%d/%d",
+             tick, st->turno_actual == TURN_BOMBER ? "P1" : "P2",
+             st->bomber_x, st->bomber_y, positions, st->bomber_lives, st->enemies_alive,
+             st->active_bombs, st->blocks_destroyed, st->score,
+             st->prioridad_bomber, st->prioridad_enemy);
+    int lives = st->bomber_lives, alive = st->enemies_alive, initial = st->initial_enemies;
+    int blocks = st->blocks_destroyed, score = st->score, bombs = st->active_bombs;
+
+    unlock(&st->m_state);
+    unlock(&st->m_events);
+    unlock(&st->m_map);
+    unlock(&st->m_pos);
+
+    /* El log se imprime fuera de las secciones críticas. */
+    log_line("[P0] cierre: %s", events[0] ? events : "sin eventos");
+    log_line("[P0] estado: vidas %d | enemigos vivos %d/%d | bloques destruidos %d | "
+             "bombas activas %d | puntaje %d", lives, alive, initial, blocks, bombs, score);
+    for (int i = 0; i < n_lines; i++)
+        log_line("%s", board[i]);
+    log_line("%s", summary);
     if (result != RESULT_NONE)
         log_line("[P0] FIN DEL JUEGO en el tick %d: %s", tick, result_name(result));
 }
@@ -291,8 +470,24 @@ static void *event_thread(void *arg)
 }
 
 /* ------------------------------------------------------------------ */
-/* Arranque y cierre                                                   */
+/* Arranque y cierre ordenado                                          */
 /* ------------------------------------------------------------------ */
+static void log_initial_board(void)
+{
+    shared_state_t *st = g.st;
+    char board[BOARD_LINES][MAX_X + 80];
+    lock(&st->m_pos);
+    lock(&st->m_map);
+    lock(&st->m_state);
+    int n = format_board(st, board);
+    unlock(&st->m_state);
+    unlock(&st->m_map);
+    unlock(&st->m_pos);
+    log_line("[P0] mapa inicial (P = Bomberman, A-D = enemigos):");
+    for (int i = 0; i < n; i++)
+        log_line("%s", board[i]);
+}
+
 static int init_private_sems(void)
 {
     sem_t *s[] = { &g.go_tick, &g.done_tick, &g.go_signal,
@@ -354,9 +549,16 @@ int p0_run(shared_state_t *st, pid_t children[], int n_children)
         return -1;
 
     /* Barrera de arranque: cada hijo avisa que creó sus hilos. */
-    for (int i = 0; i < n_children; i++)
-        sem_wait_retry(i < 3 ? &st->sem_turn_done : &st->sem_render_done);
-    log_line("[P0] los %d procesos hijos están listos: empieza la simulación", n_children);
+    int ready_ok = 1;
+    for (int i = 0; i < n_children && ready_ok; i++)
+        if (wait_child_sem(i < 3 ? &st->sem_turn_done : &st->sem_render_done) == -1)
+            ready_ok = 0;
+    if (!ready_ok)
+        set_game_over(st, RESULT_ERROR);
+    else {
+        log_line("[P0] los %d procesos hijos están listos: empieza la simulación", n_children);
+        log_initial_board();
+    }
 
     /* Primero los hilos auxiliares y al final scheduler_thread, que es el
      * que los pone a trabajar: así nunca espera a un hilo inexistente. */
@@ -392,8 +594,17 @@ int p0_run(shared_state_t *st, pid_t children[], int n_children)
 
     lock(&st->m_state);
     int result = st->game_result, tick = st->global_tick;
+    int lives = st->bomber_lives, score = st->score, alive = st->enemies_alive;
     unlock(&st->m_state);
-    log_line("RESULTADO %s | ticks=%d", result_name(result), tick);
+    lock(&st->m_map);
+    int blocks = st->blocks_destroyed;
+    unlock(&st->m_map);
+
+    log_line("RESULTADO %s | ticks=%d vidas=%d enemigos_vivos=%d bloques=%d puntaje=%d",
+             result_name(result), tick, lives, alive, blocks, score);
+    if (st->render_enabled)          /* stdout va al log: también a la terminal */
+        fprintf(stderr, "RESULTADO %s | ticks=%d vidas=%d enemigos_vivos=%d bloques=%d puntaje=%d\n",
+                result_name(result), tick, lives, alive, blocks, score);
 
     destroy_private_sems();
     return result == RESULT_ERROR ? -1 : 0;
