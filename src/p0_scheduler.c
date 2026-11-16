@@ -6,8 +6,8 @@
  * enemy_alive[], game_over y game_result.
  *
  * Hilos (todos dentro de P0):
- *   scheduler_thread : dirige el tick y decide el turno.
- *   tick_thread      : paso 1, global_tick++.
+ *   scheduler_thread : dirige el tick y decide el turno (prioridad / RR / aging).
+ *   tick_thread      : paso 1, global_tick++ y aplica SET_PRIORITY pendientes.
  *   signal_thread    : pasos 2 y 3, sem_post al proceso elegido y a P3, y
  *                      espera sem_turn_done de cada uno.
  *   event_thread     : paso 4, cierre del tick.
@@ -22,6 +22,8 @@
  *   - scheduler_thread modifica turno_actual mientras signal_thread lo
  *     consulta -> m_state, y además signal_thread solo lo lee después de
  *     sem_wait(go_signal), es decir, cuando ya fue escrito.
+ *   - prioridades leídas y modificadas a la vez -> m_state (y m_mailbox
+ *     para los buzones, tomado ANTES que m_state según el orden global).
  */
 #include "common.h"
 
@@ -51,6 +53,11 @@ typedef struct {
     /* stop se escribe ANTES de un sem_post y se lee DESPUÉS del sem_wait
      * correspondiente: el semáforo ordena el acceso. */
     int stop;
+
+    /* Solo los usa scheduler_thread. */
+    int last_turn;          /* para el desempate Round Robin */
+    int wait_bomber;        /* ticks seguidos sin turno (aging) */
+    int wait_enemy;
 } p0_ctx_t;
 
 static p0_ctx_t g;
@@ -75,6 +82,18 @@ static void report_child_status(int i, int status)
 /* ------------------------------------------------------------------ */
 /* Paso 1: tick_thread                                                 */
 /* ------------------------------------------------------------------ */
+static void apply_priority_request(int *prio, int requested, const char *who)
+{
+    if (requested >= PRIORITY_MIN && requested <= PRIORITY_MAX) {
+        log_line("[P0] buzón de %s: SET_PRIORITY %d aceptado (%d -> %d)",
+                 who, requested, *prio, requested);
+        *prio = requested;
+    } else {
+        log_line("[P0] buzón de %s: SET_PRIORITY %d RECHAZADO (fuera de %d..%d); sigue en %d",
+                 who, requested, PRIORITY_MIN, PRIORITY_MAX, *prio);
+    }
+}
+
 static void *tick_thread(void *arg)
 {
     (void)arg;
@@ -86,9 +105,25 @@ static void *tick_thread(void *arg)
 
         lock(&st->m_state);
         int tick = ++st->global_tick;          /* único escritor: P0 */
-        int pb = st->prioridad_bomber, pe = st->prioridad_enemy;
         unlock(&st->m_state);
         log_line("\n==================== TICK %d ====================", tick);
+
+        /* Orden global: m_mailbox antes que m_state. P0 solo LIMPIA las
+         * banderas de los buzones; el valor lo escribió P1 o P2. */
+        lock(&st->m_mailbox);
+        lock(&st->m_state);
+        if (st->priority_request_active) {
+            apply_priority_request(&st->prioridad_bomber, st->pending_priority_bomber, "P1");
+            st->priority_request_active = 0;
+        }
+        if (st->enemy_priority_request_active) {
+            apply_priority_request(&st->prioridad_enemy, st->pending_priority_enemy, "P2");
+            st->enemy_priority_request_active = 0;
+        }
+        int pb = st->prioridad_bomber, pe = st->prioridad_enemy;
+        unlock(&st->m_state);
+        unlock(&st->m_mailbox);
+
         log_line("[P0] inicio: tick %d | prioridades vigentes P1=%d P2=%d", tick, pb, pe);
         sem_post_checked(&g.done_tick);
     }
@@ -98,15 +133,30 @@ static void *tick_thread(void *arg)
 /* ------------------------------------------------------------------ */
 /* scheduler_thread: decide el turno                                   */
 /* ------------------------------------------------------------------ */
-/* Versión inicial: gana la prioridad mayor (el empate todavía va a P1). */
-static turn_t decide_turn(int pb, int pe, char *reason, size_t len)
+static turn_t decide_turn(int pb, int pe, int aging, char *reason, size_t len)
 {
-    if (pe > pb) {
+    turn_t t;
+    if (aging > 0 && pb != pe && (g.wait_bomber >= aging || g.wait_enemy >= aging)) {
+        /* Aging: el proceso con menor prioridad lleva 'aging' ticks sin
+         * turno; se eleva temporalmente su prioridad efectiva por un tick. */
+        t = (g.wait_bomber >= aging) ? TURN_BOMBER : TURN_ENEMY;
+        snprintf(reason, len, "aging: %s llevaba %d ticks sin turno",
+                 t == TURN_BOMBER ? "P1" : "P2",
+                 t == TURN_BOMBER ? g.wait_bomber : g.wait_enemy);
+    } else if (pb > pe) {
+        t = TURN_BOMBER;
+        snprintf(reason, len, "prioridad P1 %d > P2 %d", pb, pe);
+    } else if (pe > pb) {
+        t = TURN_ENEMY;
         snprintf(reason, len, "prioridad P2 %d > P1 %d", pe, pb);
-        return TURN_ENEMY;
+    } else {
+        t = (g.last_turn == TURN_BOMBER) ? TURN_ENEMY : TURN_BOMBER;
+        snprintf(reason, len, "empate %d = %d, Round Robin", pb, pe);
     }
-    snprintf(reason, len, "prioridad P1 %d >= P2 %d", pb, pe);
-    return TURN_BOMBER;
+    g.last_turn = t;
+    if (t == TURN_BOMBER) { g.wait_bomber = 0; g.wait_enemy++;  }
+    else                  { g.wait_enemy = 0;  g.wait_bomber++; }
+    return t;
 }
 
 static void set_game_over(shared_state_t *st, int result)
@@ -143,7 +193,7 @@ static void *scheduler_thread(void *arg)
         char reason[64];
         lock(&st->m_state);
         turn_t turn = decide_turn(st->prioridad_bomber, st->prioridad_enemy,
-                                  reason, sizeof reason);
+                                  st->aging_ticks, reason, sizeof reason);
         st->turno_actual = turn;
         snprintf(st->turn_reason, sizeof st->turn_reason, "%s", reason);
         unlock(&st->m_state);
@@ -299,6 +349,7 @@ int p0_run(shared_state_t *st, pid_t children[], int n_children)
     g.st = st;
     g.children = children;
     g.n_children = n_children;
+    g.last_turn = TURN_ENEMY;          /* con empate, el primer turno es de P1 */
     if (init_private_sems() == -1)
         return -1;
 
