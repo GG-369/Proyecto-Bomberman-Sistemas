@@ -55,11 +55,12 @@
 #define LINE_LEN            128
 
 /* Símbolos del mapa (sección 7) */
-#define CELL_WALL   'X'   /* pared indestructible        */
-#define CELL_BLOCK  '#'   /* bloque destructible         */
-#define CELL_FREE   'O'   /* camino libre                */
-#define CELL_BOMB   'Q'   /* bomba activa (lo escribe P3) */
-#define CELL_FIRE   '*'   /* fuego, dura 1 tick (P3)      */
+#define CELL_WALL       'X'   /* pared indestructible        */
+#define CELL_BLOCK      '#'   /* bloque destructible         */
+#define CELL_FREE       'O'   /* camino libre                */
+#define CELL_BOMB       'Q'   /* bomba activa (lo escribe P3) */
+#define CELL_FIRE       '*'   /* fuego, dura 1 tick (P3)      */
+#define CELL_POWERUP    '+'   /* power-up: mejora bomba (P0 carga, P1 recoge) */
 
 /* ------------------------------------------------------------------ */
 /* Tipos                                                               */
@@ -156,6 +157,7 @@ typedef struct {
     int  blocks_destroyed;
     /* Tabla de bombas publicada para P4 (bonus). bomb_timer == 0: vacío */
     int  bomb_x[MAX_BOMBS], bomb_y[MAX_BOMBS], bomb_timer[MAX_BOMBS];
+    int  bomb_powerup[MAX_BOMBS];  /* 1 si la bomba tiene power-up de alcance */
 
     /* --- Eventos de daño: escribe P3, P0 limpia (m_events) --- */
     int blast_hit_bomber;
@@ -167,6 +169,12 @@ typedef struct {
     int  tick_ms;                    /* pausa por tick (0 = sin pausa) */
     int  aging_ticks;                /* aging opcional (0 = desactivado) */
     int  initial_enemies;            /* enemigos presentes en map.txt   */
+
+    /* --- Power-ups: P0 carga del mapa, P1 recoge, P3 usa en explosión --- */
+    int  powerup_x[MAX_Y], powerup_y[MAX_Y];  /* posiciones de power-ups en el mapa */
+    int  powerup_count;                       /* número de power-ups activos */
+    int  bomber_powerup;                      /* 1 si Bomberman tiene power-up activo */
+    int  bomb_range_bonus;                    /* bonificador de alcance (0 o 1) */
 } shared_state_t;
 
 /* ------------------------------------------------------------------ */

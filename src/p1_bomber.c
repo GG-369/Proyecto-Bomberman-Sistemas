@@ -245,11 +245,40 @@ static void move_bomber(bomber_context_t *ctx, instr_type_t type)
     lock(&ctx->st->m_map);
     int valid = map_in_bounds(ctx->st, nx, ny) &&
                 map_cell_walkable(ctx->st->map_grid[ny][nx]);
+
+    /* Verificar si hay power-up en la celda destino */
+    int has_powerup = 0;
+    if (valid) {
+        for (int i = 0; i < ctx->st->powerup_count; i++) {
+            if (ctx->st->powerup_x[i] == nx && ctx->st->powerup_y[i] == ny) {
+                has_powerup = 1;
+                break;
+            }
+        }
+    }
     unlock(&ctx->st->m_map);
 
     if (valid) {
         ctx->x = nx;
         ctx->y = ny;
+
+        /* Si hay power-up, recogerlo */
+        if (has_powerup) {
+            lock(&ctx->st->m_map);
+            for (int i = 0; i < ctx->st->powerup_count; i++) {
+                if (ctx->st->powerup_x[i] == nx && ctx->st->powerup_y[i] == ny) {
+                    /* Mover el último power-up a esta posición y decrementar count */
+                    ctx->st->powerup_x[i] = ctx->st->powerup_x[ctx->st->powerup_count - 1];
+                    ctx->st->powerup_y[i] = ctx->st->powerup_y[ctx->st->powerup_count - 1];
+                    ctx->st->powerup_count--;
+                    ctx->st->bomber_powerup = 1;
+                    ctx->st->bomb_range_bonus = 1;  /* +1 de alcance */
+                    log_line("[P1] ¡Power-up recogido en (%d,%d)! Alcance de bomba +1", nx, ny);
+                    break;
+                }
+            }
+            unlock(&ctx->st->m_map);
+        }
     }
     unlock(&ctx->pos_mutex);
     log_line("[P1] movimiento %s -> (%d,%d)%s",

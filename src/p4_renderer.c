@@ -142,7 +142,7 @@ static void render_frame(shared_state_t *st)
 
     /* Leyenda */
     cursor_goto(n_lines + 3, 1);
-    const char *legend = "Leyenda: X=pared #=bloque O=libre P=Bomberman A-D=enemigos Q=bomba *=fuego\n";
+    const char *legend = "Leyenda: X=pared #=bloque O=libre P=Bomberman A-D=enemigos Q=bomba *=fuego +=power-up\n";
     if (write(g_tty_fd, legend, strlen(legend)) == -1)
         perror("write legend");
 
