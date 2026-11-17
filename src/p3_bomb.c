@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -51,7 +52,7 @@ static sem_t explosion_queue_sem;  /* cuenta trabajos en cola de explosión */
 
 static explosion_job_t explosion_queue[MAX_EXPLOSION_QUEUE];
 static int queue_head = 0, queue_tail = 0;
-static int g_stop = 0;
+static atomic_int g_stop = 0;
 
 /* ------------------------------------------------------------------ */
 /* Utilidades de cola de explosión (protegida por m_map)              */
@@ -92,8 +93,18 @@ static void *controller_thread(void *arg)
     (void)arg;
     for (;;) {
         sem_wait_retry(&g_st->sem_bomb_turn);
-        if (g_stop)
+
+        /* Verificar si el juego terminó (P0 marcó game_over) */
+        lock(&g_st->m_state);
+        int over = g_st->game_over;
+        unlock(&g_st->m_state);
+        if (over) {
+            atomic_store(&g_stop, 1);
+            /* Despertar a fuse y explosion para que salgan limpiamente */
+            sem_post_checked(&sem_fuse_go);
+            sem_post_checked(&sem_explosion_go);
             break;
+        }
 
         /* --- FASE 1: Limpiar fuego del tick anterior --- */
         lock(&g_st->m_map);
@@ -160,11 +171,21 @@ static void *controller_thread(void *arg)
                 g_st->bomb_x[slot] = req_x;
                 g_st->bomb_y[slot] = req_y;
                 g_st->bomb_timer[slot] = BOMB_TIMER;
+                /* Si Bomberman tiene power-up, esta bomba tiene alcance extra */
+                if (g_st->bomber_powerup) {
+                    g_st->bomb_powerup[slot] = 1;
+                    g_st->bomber_powerup = 0;
+                    g_st->bomb_range_bonus = 0;  /* se consume al colocar la bomba */
+                    log_line("[P3] bomba CON POWER-UP registrada en slot %d: (%d,%d) timer=%d range=%d",
+                             slot, req_x, req_y, BOMB_TIMER, BOMB_RANGE + 1);
+                } else {
+                    g_st->bomb_powerup[slot] = 0;
+                    log_line("[P3] bomba registrada en slot %d: (%d,%d) timer=%d",
+                             slot, req_x, req_y, BOMB_TIMER);
+                }
                 g_st->active_bombs++;
                 /* Marcar Q en map_grid */
                 g_st->map_grid[req_y][req_x] = CELL_BOMB;
-                log_line("[P3] bomba registrada en slot %d: (%d,%d) timer=%d",
-                         slot, req_x, req_y, BOMB_TIMER);
             } else {
                 log_line("[P3] bomba RECHAZADA: %s (slots=%d/%d)",
                          slot == -1 ? "sin slots libres" :
@@ -190,7 +211,7 @@ static void *fuse_thread(void *arg)
     (void)arg;
     for (;;) {
         sem_wait_retry(&sem_fuse_go);
-        if (g_stop)
+        if (atomic_load(&g_stop))
             break;
 
         lock(&g_st->m_map);
@@ -217,9 +238,9 @@ static void *fuse_thread(void *arg)
 /* Propagación de fuego en una dirección                              */
 /* Retorna 1 si el fuego se detiene (pared/bloque), 0 si sigue        */
 /* ------------------------------------------------------------------ */
-static int propagate_fire(int x, int y, int dx, int dy, int *hit_bomber, int hit_enemy[NUM_ENEMIES])
+static int propagate_fire(int x, int y, int dx, int dy, int range, int *hit_bomber, int hit_enemy[NUM_ENEMIES])
 {
-    for (int step = 1; step <= BOMB_RANGE; step++) {
+    for (int step = 1; step <= range; step++) {
         int nx = x + dx * step;
         int ny = y + dy * step;
 
@@ -305,7 +326,7 @@ static void *explosion_thread(void *arg)
     (void)arg;
     for (;;) {
         sem_wait_retry(&sem_explosion_go);
-        if (g_stop)
+        if (atomic_load(&g_stop))
             break;
 
         int ex, ey;
@@ -313,7 +334,17 @@ static void *explosion_thread(void *arg)
             int hit_bomber = 0;
             int hit_enemy[NUM_ENEMIES] = {0};
 
-            log_line("[P3] explosión en (%d,%d) range=%d", ex, ey, BOMB_RANGE);
+            /* Encontrar el slot de esta bomba para saber si tiene power-up */
+            int bomb_slot = -1;
+            for (int i = 0; i < MAX_BOMBS; i++) {
+                if (g_st->bomb_x[i] == ex && g_st->bomb_y[i] == ey && g_st->bomb_timer[i] == 0) {
+                    bomb_slot = i;
+                    break;
+                }
+            }
+            int has_powerup = (bomb_slot >= 0) ? g_st->bomb_powerup[bomb_slot] : 0;
+            int range = BOMB_RANGE + has_powerup;
+            log_line("[P3] explosión en (%d,%d) range=%d (base=%d powerup=%d)", ex, ey, range, BOMB_RANGE, has_powerup);
 
             /* Centro de la explosión */
             lock(&g_st->m_map);
@@ -341,10 +372,10 @@ static void *explosion_thread(void *arg)
             unlock(&g_st->m_pos);
 
             /* Propagar en 4 direcciones */
-            propagate_fire(ex, ey, 1, 0, &hit_bomber, hit_enemy);   /* derecha */
-            propagate_fire(ex, ey, -1, 0, &hit_bomber, hit_enemy);  /* izquierda */
-            propagate_fire(ex, ey, 0, 1, &hit_bomber, hit_enemy);   /* abajo */
-            propagate_fire(ex, ey, 0, -1, &hit_bomber, hit_enemy);  /* arriba */
+            propagate_fire(ex, ey, 1, 0, range, &hit_bomber, hit_enemy);   /* derecha */
+            propagate_fire(ex, ey, -1, 0, range, &hit_bomber, hit_enemy);  /* izquierda */
+            propagate_fire(ex, ey, 0, 1, range, &hit_bomber, hit_enemy);   /* abajo */
+            propagate_fire(ex, ey, 0, -1, range, &hit_bomber, hit_enemy);  /* arriba */
 
             /* Limpiar bomba de la tabla (slot libre) y quitar Q del mapa */
             lock(&g_st->m_map);
@@ -391,23 +422,10 @@ void p3_main(shared_state_t *st)
     pthread_create(&th_fuse, NULL, fuse_thread, NULL);
     pthread_create(&th_explosion, NULL, explosion_thread, NULL);
 
-    /* Esperar a que P0 marque game_over */
-    for (;;) {
-        lock(&st->m_state);
-        int over = st->game_over;
-        unlock(&st->m_state);
-        if (over)
-            break;
-        sleep_ms(10);
-    }
-
-    /* Parar hilos */
-    g_stop = 1;
-    sem_post_checked(&st->sem_bomb_turn);
-    sem_post_checked(&sem_fuse_go);
-    sem_post_checked(&sem_explosion_go);
-
+    /* Esperar a que controller_thread termine (cuando game_over) */
     pthread_join(th_controller, NULL);
+
+    /* Parar hilos fuse y explosion (controller ya los despertó con sem_post) */
     pthread_join(th_fuse, NULL);
     pthread_join(th_explosion, NULL);
 

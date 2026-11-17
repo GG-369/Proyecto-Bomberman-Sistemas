@@ -23,7 +23,7 @@
 static int is_valid_map_char(char c)
 {
     return c == CELL_WALL || c == CELL_BLOCK || c == CELL_FREE ||
-           c == 'P' || (c >= 'A' && c <= 'D');
+           c == 'P' || (c >= 'A' && c <= 'D') || c == CELL_POWERUP;
 }
 
 /* Verifica que una celda sea transitable (no pared, no bloque, no bomba, no fuego) */
@@ -104,7 +104,7 @@ int map_load(const char *path, shared_state_t *st)
             memcpy(grid[row], start, len);
             grid[row][len] = '\0';
 
-            /* Validar caracteres y contar P / A-D */
+            /* Validar caracteres y contar P / A-D / + */
             for (int c = 0; c < cols; c++) {
                 char ch = grid[row][c];
                 if (!is_valid_map_char(ch)) {
@@ -129,6 +129,8 @@ int map_load(const char *path, shared_state_t *st)
                     st->enemy_y[idx] = row;
                     st->enemy_alive[idx] = 1;
                     enemy_count++;
+                } else if (ch == CELL_POWERUP) {
+                    /* Power-up: se guardará la posición al copiar a shared_state_t */
                 }
             }
             row++;
@@ -202,6 +204,8 @@ int map_load(const char *path, shared_state_t *st)
                 st->enemy_y[idx] = row;
                 st->enemy_alive[idx] = 1;
                 enemy_count++;
+            } else if (ch == CELL_POWERUP) {
+                /* Power-up: se guardará la posición al copiar a shared_state_t */
             }
         }
         row++;
@@ -225,12 +229,20 @@ int map_load(const char *path, shared_state_t *st)
     /* Copiar a shared_state_t (bajo m_map, pero P0 aún no ha hecho fork, así que sin lock) */
     st->map_w = cols;
     st->map_h = row;
+    st->powerup_count = 0;
     for (int y = 0; y < row; y++) {
         for (int x = 0; x < cols; x++) {
             char ch = grid[y][x];
             /* Sección 7: celdas iniciales P y A-D quedan como camino libre (O) en map_grid */
             if (ch == 'P' || (ch >= 'A' && ch <= 'D')) {
                 st->map_grid[y][x] = CELL_FREE;
+            } else if (ch == CELL_POWERUP) {
+                st->map_grid[y][x] = CELL_FREE;  /* power-up se recoge, celda queda libre */
+                if (st->powerup_count < MAX_Y) {
+                    st->powerup_x[st->powerup_count] = x;
+                    st->powerup_y[st->powerup_count] = y;
+                    st->powerup_count++;
+                }
             } else {
                 st->map_grid[y][x] = ch;
             }
@@ -251,9 +263,11 @@ int map_load(const char *path, shared_state_t *st)
     st->initial_enemies = enemy_count;
     st->active_bombs = 0;
     st->blocks_destroyed = 0;
+    st->bomber_powerup = 0;
+    st->bomb_range_bonus = 0;
 
-    log_line("[P0] mapa cargado: %dx%d, Bomberman en (%d,%d), %d enemigos",
-             st->map_w, st->map_h, st->bomber_x, st->bomber_y, st->enemies_alive);
+    log_line("[P0] mapa cargado: %dx%d, Bomberman en (%d,%d), %d enemigos, %d power-ups",
+             st->map_w, st->map_h, st->bomber_x, st->bomber_y, st->enemies_alive, st->powerup_count);
     return 0;
 }
 
@@ -285,6 +299,14 @@ void map_snapshot(const shared_state_t *st, char out[MAX_Y][MAX_X + 1])
     /* Fuego (*) - se escribe en m_map por explosion_thread, pero aquí
      * solo mostramos lo que haya en map_grid si P3 lo puso como CELL_FIRE.
      * Nota: el fuego dura 1 tick; P3 lo pone y lo quita en el mismo cierre. */
+
+    /* Power-ups (+) que no se han recogido aún */
+    for (int i = 0; i < st->powerup_count; i++) {
+        int px = st->powerup_x[i];
+        int py = st->powerup_y[i];
+        if (map_in_bounds(st, px, py) && st->map_grid[py][px] == CELL_FREE)
+            out[py][px] = CELL_POWERUP;
+    }
 
     /* Bomberman (P) - siempre visible por encima de todo */
     if (map_in_bounds(st, st->bomber_x, st->bomber_y))

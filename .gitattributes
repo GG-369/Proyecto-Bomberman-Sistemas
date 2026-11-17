@@ -1,0 +1,10 @@
+# Todo el texto del repositorio se guarda con saltos de línea LF (formato Linux),
+# aunque alguien haga commit desde Windows. Evita que un commit cambie todas
+# las líneas de un archivo solo por el formato de fin de línea.
+* text=auto eol=lf
+*.c   text eol=lf
+*.h   text eol=lf
+*.sh  text eol=lf
+*.txt text eol=lf
+*.md  text eol=lf
+Makefile text eol=lf

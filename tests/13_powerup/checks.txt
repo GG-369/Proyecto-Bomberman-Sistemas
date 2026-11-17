@@ -1,0 +1,4 @@
+Power-up recogido
+bomba CON POWER-UP
+explosión en (4,1) range=3
+bloque destruido en (6,1)
