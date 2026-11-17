@@ -1,0 +1,4 @@
+# MAX_BOMBS y bomba sobre otra bomba (compilado con BOMB_TIMER=6, ver README)
+max_ticks 20
+prio_bomber 40
+prio_enemy 30

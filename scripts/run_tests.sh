@@ -93,8 +93,14 @@ run_case() {
     fi
 
     log_info "[$case_name] Ejecutando: ${cmd[*]}"
-    "${cmd[@]}" >"$log_file" 2>&1
+    # Límite de tiempo: si algún proceso se cuelga (deadlock), el caso falla
+    # en lugar de dejar make test bloqueado para siempre.
+    timeout "${CASE_TIMEOUT:-120}" "${cmd[@]}" >"$log_file" 2>&1
     local exit_code=$?
+    if [[ $exit_code -eq 124 ]]; then
+        log_err "[$case_name] Se colgó: superó ${CASE_TIMEOUT:-120} s (posible deadlock)"
+        return 1
+    fi
 
     if [[ "$MODE" == "valgrind" || "$MODE" == "helgrind" ]]; then
         if [[ $exit_code -eq 42 ]]; then

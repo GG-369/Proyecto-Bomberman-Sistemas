@@ -1,0 +1,4 @@
+RESUMEN tick=1 turno=P2 bomber=(1,1) enemigos=[A(1,1) B(-) C(-) D(-)] vidas=2 vivos=1 bombas=0 bloques=0 puntaje=0 prio=30/40
+RESUMEN tick=2 turno=P2 bomber=(1,1) enemigos=[A(1,1) B(-) C(-) D(-)] vidas=1 vivos=1 bombas=0 bloques=0 puntaje=0 prio=30/40
+RESUMEN tick=3 turno=P2 bomber=(1,1) enemigos=[A(1,1) B(-) C(-) D(-)] vidas=0 vivos=1 bombas=0 bloques=0 puntaje=0 prio=30/40
+RESULTADO DERROTA (Bomberman sin vidas) | ticks=3 vidas=0 enemigos_vivos=1 bloques=0 puntaje=0

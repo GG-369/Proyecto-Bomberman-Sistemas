@@ -1,0 +1,4 @@
+# Colisión y explosión en el mismo tick: se descuenta una sola vida
+max_ticks 20
+prio_bomber 30
+prio_enemy 30

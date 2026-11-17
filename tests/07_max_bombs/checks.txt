@@ -1,0 +1,4 @@
+[P3] bomba registrada en slot 0: (1,1) timer=6
+[P3] bomba RECHAZADA: celda no transitable (slots=1/2)
+[P3] bomba RECHAZADA: sin slots libres (slots=2/2)
+[P3] REACCIÓN EN CADENA: bomba en (2,1) detonada por fuego

@@ -1,0 +1,11 @@
+RESUMEN tick=1 turno=P2 bomber=(1,1) enemigos=[A(9,2) B(2,5) C(4,3) D(8,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=20/30
+RESUMEN tick=2 turno=P2 bomber=(1,1) enemigos=[A(9,1) B(1,5) C(5,3) D(9,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=20/30
+RESUMEN tick=3 turno=P2 bomber=(1,1) enemigos=[A(9,2) B(2,5) C(4,3) D(8,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=20/30
+RESUMEN tick=4 turno=P1 bomber=(1,1) enemigos=[A(9,2) B(2,5) C(4,3) D(8,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=20/30
+RESUMEN tick=5 turno=P1 bomber=(2,1) enemigos=[A(9,2) B(2,5) C(4,3) D(8,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=45/30
+RESUMEN tick=6 turno=P1 bomber=(3,1) enemigos=[A(9,2) B(2,5) C(4,3) D(8,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=45/30
+RESUMEN tick=7 turno=P2 bomber=(3,1) enemigos=[A(9,1) B(1,5) C(5,3) D(9,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=45/30
+RESUMEN tick=8 turno=P1 bomber=(3,1) enemigos=[A(9,1) B(1,5) C(5,3) D(9,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=45/30
+RESUMEN tick=9 turno=P1 bomber=(3,1) enemigos=[A(9,1) B(1,5) C(5,3) D(9,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=45/30
+RESUMEN tick=10 turno=P1 bomber=(3,1) enemigos=[A(9,1) B(1,5) C(5,3) D(9,5)] vidas=3 vivos=4 bombas=0 bloques=0 puntaje=0 prio=45/30
+RESULTADO LIMITE DE TICKS (max_ticks) | ticks=10 vidas=3 enemigos_vivos=4 bloques=0 puntaje=0

@@ -1,0 +1,3 @@
+[P3] fuego alcanza a Bomberman en (2,1)
+colisión con enemigo 1 Y explosión en el mismo tick: -1 vida (solo una)
+enemigo 1 eliminado (+100)

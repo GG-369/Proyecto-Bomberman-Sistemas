@@ -1,0 +1,5 @@
+[P1] movimiento RIGHT -> (2,1) [bloqueado; consume turno]
+[P1] movimiento RIGHT -> (1,1) [bloqueado; consume turno]
+[P3] bloque destruido en (3,1)
+[P1] movimiento UP -> (1,2) [bloqueado; consume turno]
+[P1] movimiento UP -> (1,1)

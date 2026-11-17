@@ -1,0 +1,4 @@
+# Fin porque se acabaron los archivos y no quedan bombas activas
+max_ticks 20
+prio_bomber 30
+prio_enemy 30

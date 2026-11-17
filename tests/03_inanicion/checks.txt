@@ -1,0 +1,2 @@
+prioridad P2 30 > P1 20
+LIMITE DE TICKS

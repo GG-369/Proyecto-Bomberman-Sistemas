@@ -1,0 +1,4 @@
+# Reacción en cadena: la bomba (1,1) hace explotar a la de (2,1) en el mismo tick; Bomberman queda en el fuego de ambas y pierde 1 sola vida
+max_ticks 20
+prio_bomber 40
+prio_enemy 30
