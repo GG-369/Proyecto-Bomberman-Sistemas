@@ -136,6 +136,8 @@ run_case() {
 for case_dir in "${TEST_DIRS[@]}"; do
     case_name=$(basename "$case_dir")
     [[ "$case_name" == "*" ]] && continue
+    # tests/unit tiene la prueba unitaria (make test_base), no es un caso de simulación
+    [[ "$case_name" == "unit" ]] && continue
 
     TOTAL=$((TOTAL + 1))
     if run_case "$case_dir"; then

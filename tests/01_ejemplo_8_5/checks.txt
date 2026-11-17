@@ -1,6 +1,7 @@
-REPORTE ===== planificador P0 =====
-REPORTE turnos de acción: P1=0 (0%) P2=10 (100%) de 10
-REPORTE fases de bombas (P3): 10
-REPORTE racha más larga sin turno: P1=10 ticks P2=0 ticks
-REPORTE turnos otorgados por aging: 0
-REPORTE SET_PRIORITY P1: aceptadas=0 rechazadas=0 | P2: aceptadas=0 rechazadas=0
+[P1] BOMB solicitado en (3,1)
+[P3] bomba registrada en slot 0: (3,1) timer=3
+[P3] explosión en (3,1) range=2
+[P3] bloque destruido en (4,1)
+[P3] bloque destruido en (3,2)
+[P0] buzón de P1: SET_PRIORITY 25 aceptado (40 -> 25)
+turno -> P2 enemy_process (prioridad P2 30 > P1 25)
