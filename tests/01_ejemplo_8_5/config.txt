@@ -1,5 +1,4 @@
-# Mejora de P0: reporte del planificador sobre el escenario de inanición.
-# P1 (20) nunca recibe turno frente a P2 (30): el reporte debe medirlo.
-max_ticks 10
-prio_bomber 20
+# Ejemplo de la sección 8.5 del enunciado
+max_ticks 20
+prio_bomber 40
 prio_enemy 30
