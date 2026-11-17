@@ -1,0 +1,8 @@
+# Commits que solo cambiaron el formato de fin de línea (LF <-> CRLF) de archivos completos.
+# GitHub (y "git blame --ignore-revs-file .git-blame-ignore-revs") los ignora al mostrar
+# quién escribió cada línea, para que la autoría siga siendo la real.
+#
+# 0ac14c0: power-ups; además convirtió todos los archivos a CRLF.
+0ac14c02bc0e73c692385e1b49ad4eaa7fedf137
+# Vuelta a LF en todo el repositorio.
+fa2d65bdfab0338f58a8615b9d80b96b128a28fd
