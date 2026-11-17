@@ -1,0 +1,8 @@
+[P1] línea 2 desconocida: ignorada (sin consumir turno)
+[P1] línea 4 desconocida: ignorada (sin consumir turno)
+[P2] enemigo 2: instrucción desconocida, ignorada
+SET_PRIORITY 99 RECHAZADO (fuera de 1..49)
+SET_PRIORITY 0 RECHAZADO (fuera de 1..49)
+buzón de P1: SET_PRIORITY 10 aceptado (40 -> 10)
+[P2] enemigo 3 solicita SET_PRIORITY 35
+buzón de P2: SET_PRIORITY 35 aceptado (30 -> 35)

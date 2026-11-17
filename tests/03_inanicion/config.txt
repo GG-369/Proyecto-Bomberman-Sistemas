@@ -1,0 +1,4 @@
+# Inanición: P1 (20) nunca recibe turno frente a P2 (30) y no puede ejecutar su SET_PRIORITY
+max_ticks 10
+prio_bomber 20
+prio_enemy 30

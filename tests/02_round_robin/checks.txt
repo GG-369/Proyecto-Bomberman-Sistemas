@@ -1,0 +1,4 @@
+empate 30 = 30, Round Robin
+[P3] bomba registrada en slot 0: (3,1) timer=3
+[P3] fuego alcanza a Bomberman en (2,1)
+Bomberman alcanzado por una explosión: -1 vida

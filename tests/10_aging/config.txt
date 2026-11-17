@@ -1,0 +1,5 @@
+# Opcional: aging. P1 recibe un turno tras 3 ticks de espera, pide prioridad 45 y deja de sufrir inanición
+max_ticks 10
+prio_bomber 20
+prio_enemy 30
+aging_ticks 3

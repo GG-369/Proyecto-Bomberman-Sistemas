@@ -1,0 +1,4 @@
+# Variante de la sección 8.5 con prioridades iguales (Round Robin)
+max_ticks 20
+prio_bomber 30
+prio_enemy 30

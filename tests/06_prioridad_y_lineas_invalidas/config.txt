@@ -1,0 +1,4 @@
+# SET_PRIORITY fuera de rango, líneas desconocidas y dos enemigos pidiendo prioridad en el mismo turno
+max_ticks 20
+prio_bomber 40
+prio_enemy 30
