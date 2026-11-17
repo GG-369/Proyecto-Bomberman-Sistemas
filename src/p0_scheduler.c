@@ -26,6 +26,13 @@
  *     para los buzones, tomado ANTES que m_state según el orden global).
  *   - event_thread actualiza bomber_lives/game_over mientras
  *     scheduler_thread los lee -> m_state.
+ *
+ * Mejora (reporte del planificador): al terminar, P0 imprime métricas de
+ * planificación en líneas "REPORTE": turnos de P1/P2/P3 y su porcentaje,
+ * la racha más larga sin turno (inanición medida), cuántos turnos dio el
+ * aging y cuántas SET_PRIORITY se aceptaron o rechazaron. Cada contador
+ * tiene UN solo hilo escritor y se lee recién después de pthread_join,
+ * por eso no necesita mutex.
  */
 #include "common.h"
 
@@ -63,6 +70,19 @@ typedef struct {
     int last_turn;          /* para el desempate Round Robin */
     int wait_bomber;        /* ticks seguidos sin turno (aging) */
     int wait_enemy;
+
+    /* Métricas del reporte. Entre paréntesis, el único hilo que escribe.
+     * p0_run las lee después de pthread_join: el join ordena el acceso. */
+    struct {
+        int turns_bomber;       /* (scheduler_thread) turnos de acción de P1 */
+        int turns_enemy;        /* (scheduler_thread) turnos de acción de P2 */
+        int max_wait_bomber;    /* (scheduler_thread) racha más larga sin turno */
+        int max_wait_enemy;
+        int aging_turns;        /* (scheduler_thread) turnos dados por aging */
+        int turns_bomb;         /* (signal_thread) fases de bombas completadas */
+        int prio_ok[2];         /* (tick_thread) SET_PRIORITY aceptadas: [0]=P1 [1]=P2 */
+        int prio_rejected[2];   /* (tick_thread) SET_PRIORITY rechazadas */
+    } stats;
 } p0_ctx_t;
 
 static p0_ctx_t g;
@@ -132,16 +152,27 @@ static int wait_child_sem(sem_t *s)
 /* ------------------------------------------------------------------ */
 /* Paso 1: tick_thread                                                 */
 /* ------------------------------------------------------------------ */
-static void apply_priority_request(int *prio, int requested, const char *who)
+/* Devuelve 1 si la solicitud se aceptó y 0 si se rechazó. */
+static int apply_priority_request(int *prio, int requested, const char *who)
 {
     if (requested >= PRIORITY_MIN && requested <= PRIORITY_MAX) {
         log_line("[P0] buzón de %s: SET_PRIORITY %d aceptado (%d -> %d)",
                  who, requested, *prio, requested);
         *prio = requested;
-    } else {
-        log_line("[P0] buzón de %s: SET_PRIORITY %d RECHAZADO (fuera de %d..%d); sigue en %d",
-                 who, requested, PRIORITY_MIN, PRIORITY_MAX, *prio);
+        return 1;
     }
+    log_line("[P0] buzón de %s: SET_PRIORITY %d RECHAZADO (fuera de %d..%d); sigue en %d",
+             who, requested, PRIORITY_MIN, PRIORITY_MAX, *prio);
+    return 0;
+}
+
+/* Solo la llama tick_thread: es el único escritor de prio_ok/prio_rejected. */
+static void count_priority_request(int who, int accepted)
+{
+    if (accepted)
+        g.stats.prio_ok[who]++;
+    else
+        g.stats.prio_rejected[who]++;
 }
 
 static void *tick_thread(void *arg)
@@ -163,11 +194,13 @@ static void *tick_thread(void *arg)
         lock(&st->m_mailbox);
         lock(&st->m_state);
         if (st->priority_request_active) {
-            apply_priority_request(&st->prioridad_bomber, st->pending_priority_bomber, "P1");
+            count_priority_request(0, apply_priority_request(&st->prioridad_bomber,
+                                                             st->pending_priority_bomber, "P1"));
             st->priority_request_active = 0;
         }
         if (st->enemy_priority_request_active) {
-            apply_priority_request(&st->prioridad_enemy, st->pending_priority_enemy, "P2");
+            count_priority_request(1, apply_priority_request(&st->prioridad_enemy,
+                                                             st->pending_priority_enemy, "P2"));
             st->enemy_priority_request_active = 0;
         }
         int pb = st->prioridad_bomber, pe = st->prioridad_enemy;
@@ -190,6 +223,7 @@ static turn_t decide_turn(int pb, int pe, int aging, char *reason, size_t len)
         /* Aging: el proceso con menor prioridad lleva 'aging' ticks sin
          * turno; se eleva temporalmente su prioridad efectiva por un tick. */
         t = (g.wait_bomber >= aging) ? TURN_BOMBER : TURN_ENEMY;
+        g.stats.aging_turns++;
         snprintf(reason, len, "aging: %s llevaba %d ticks sin turno",
                  t == TURN_BOMBER ? "P1" : "P2",
                  t == TURN_BOMBER ? g.wait_bomber : g.wait_enemy);
@@ -204,8 +238,12 @@ static turn_t decide_turn(int pb, int pe, int aging, char *reason, size_t len)
         snprintf(reason, len, "empate %d = %d, Round Robin", pb, pe);
     }
     g.last_turn = t;
-    if (t == TURN_BOMBER) { g.wait_bomber = 0; g.wait_enemy++;  }
-    else                  { g.wait_enemy = 0;  g.wait_bomber++; }
+    if (t == TURN_BOMBER) { g.wait_bomber = 0; g.wait_enemy++;  g.stats.turns_bomber++; }
+    else                  { g.wait_enemy = 0;  g.wait_bomber++; g.stats.turns_enemy++;  }
+
+    /* Inanición medida: la racha más larga de ticks seguidos sin turno. */
+    if (g.wait_bomber > g.stats.max_wait_bomber) g.stats.max_wait_bomber = g.wait_bomber;
+    if (g.wait_enemy  > g.stats.max_wait_enemy)  g.stats.max_wait_enemy  = g.wait_enemy;
     return t;
 }
 
@@ -310,6 +348,8 @@ static void *signal_thread(void *arg)
         sem_post_checked(&st->sem_bomb_turn);
         if (wait_child_sem(&st->sem_turn_done) == -1)
             g.child_failed = 1;
+        else
+            g.stats.turns_bomb++;            /* único escritor: signal_thread */
 
         sem_post_checked(&g.done_signal);
     }
@@ -538,6 +578,29 @@ static void reap_children(void)
     }
 }
 
+/* Mejora: reporte del planificador. Se llama después de pthread_join de
+ * los 4 hilos, así que lee g.stats sin mutex y sin carreras. */
+static int percent(int part, int total)
+{
+    return total > 0 ? (part * 100 + total / 2) / total : 0;   /* redondeado */
+}
+
+static void print_scheduler_report(void)
+{
+    int action = g.stats.turns_bomber + g.stats.turns_enemy;
+    log_line("REPORTE ===== planificador P0 =====");
+    log_line("REPORTE turnos de acción: P1=%d (%d%%) P2=%d (%d%%) de %d",
+             g.stats.turns_bomber, percent(g.stats.turns_bomber, action),
+             g.stats.turns_enemy, percent(g.stats.turns_enemy, action), action);
+    log_line("REPORTE fases de bombas (P3): %d", g.stats.turns_bomb);
+    log_line("REPORTE racha más larga sin turno: P1=%d ticks P2=%d ticks",
+             g.stats.max_wait_bomber, g.stats.max_wait_enemy);
+    log_line("REPORTE turnos otorgados por aging: %d", g.stats.aging_turns);
+    log_line("REPORTE SET_PRIORITY P1: aceptadas=%d rechazadas=%d | P2: aceptadas=%d rechazadas=%d",
+             g.stats.prio_ok[0], g.stats.prio_rejected[0],
+             g.stats.prio_ok[1], g.stats.prio_rejected[1]);
+}
+
 int p0_run(shared_state_t *st, pid_t children[], int n_children)
 {
     memset(&g, 0, sizeof g);
@@ -605,6 +668,7 @@ int p0_run(shared_state_t *st, pid_t children[], int n_children)
     if (st->render_enabled)          /* stdout va al log: también a la terminal */
         fprintf(stderr, "RESULTADO %s | ticks=%d vidas=%d enemigos_vivos=%d bloques=%d puntaje=%d\n",
                 result_name(result), tick, lives, alive, blocks, score);
+    print_scheduler_report();
 
     destroy_private_sems();
     return result == RESULT_ERROR ? -1 : 0;
