@@ -1,0 +1,9 @@
+RESUMEN tick=1 turno=P1 bomber=(2,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=0 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=2 turno=P1 bomber=(3,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=0 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=3 turno=P1 bomber=(4,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=0 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=4 turno=P1 bomber=(5,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=0 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=5 turno=P1 bomber=(5,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=1 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=6 turno=P1 bomber=(4,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=1 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=7 turno=P1 bomber=(3,1) enemigos=[A(7,1) B(-) C(-) D(-)] vidas=3 vivos=1 bombas=1 bloques=0 puntaje=0 prio=40/30
+RESUMEN tick=8 turno=P1 bomber=(2,1) enemigos=[A(-) B(-) C(-) D(-)] vidas=3 vivos=0 bombas=0 bloques=0 puntaje=100 prio=40/30
+RESULTADO VICTORIA (todos los enemigos eliminados) | ticks=8 vidas=3 enemigos_vivos=0 bloques=0 puntaje=100

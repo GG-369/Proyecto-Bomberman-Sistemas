@@ -1,0 +1,4 @@
+# Fin por derrota: el enemigo se queda sobre Bomberman y lo toca en cada turno de P2
+max_ticks 20
+prio_bomber 30
+prio_enemy 40
