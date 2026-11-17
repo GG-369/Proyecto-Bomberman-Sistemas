@@ -1,0 +1,6 @@
+REPORTE ===== planificador P0 =====
+REPORTE turnos de acción: P1=0 (0%) P2=10 (100%) de 10
+REPORTE fases de bombas (P3): 10
+REPORTE racha más larga sin turno: P1=10 ticks P2=0 ticks
+REPORTE turnos otorgados por aging: 0
+REPORTE SET_PRIORITY P1: aceptadas=0 rechazadas=0 | P2: aceptadas=0 rechazadas=0
