@@ -39,9 +39,13 @@ if [[ "$MODE" == "tsan" ]]; then
     fi
 fi
 
-# Descubrir casos de prueba
-TEST_DIRS=(tests/*/)
-if [[ ! -d "${TEST_DIRS[0]}" ]]; then
+# Descubrir casos de prueba (excluir directorio unit/)
+TEST_DIRS=()
+for d in tests/*/; do
+    [[ "$(basename "$d")" == "unit" ]] && continue
+    TEST_DIRS+=("$d")
+done
+if [[ ${#TEST_DIRS[@]} -eq 0 ]]; then
     log_err "No hay casos en tests/"
     exit 1
 fi

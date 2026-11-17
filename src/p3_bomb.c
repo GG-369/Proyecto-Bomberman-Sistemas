@@ -93,8 +93,18 @@ static void *controller_thread(void *arg)
     (void)arg;
     for (;;) {
         sem_wait_retry(&g_st->sem_bomb_turn);
-        if (atomic_load(&g_stop))
+
+        /* Verificar si el juego terminó (P0 marcó game_over) */
+        lock(&g_st->m_state);
+        int over = g_st->game_over;
+        unlock(&g_st->m_state);
+        if (over) {
+            atomic_store(&g_stop, 1);
+            /* Despertar a fuse y explosion para que salgan limpiamente */
+            sem_post_checked(&sem_fuse_go);
+            sem_post_checked(&sem_explosion_go);
             break;
+        }
 
         /* --- FASE 1: Limpiar fuego del tick anterior --- */
         lock(&g_st->m_map);
@@ -412,23 +422,10 @@ void p3_main(shared_state_t *st)
     pthread_create(&th_fuse, NULL, fuse_thread, NULL);
     pthread_create(&th_explosion, NULL, explosion_thread, NULL);
 
-    /* Esperar a que P0 marque game_over */
-    for (;;) {
-        lock(&st->m_state);
-        int over = st->game_over;
-        unlock(&st->m_state);
-        if (over)
-            break;
-        sleep_ms(10);
-    }
-
-    /* Parar hilos */
-    atomic_store(&g_stop, 1);
-    sem_post_checked(&st->sem_bomb_turn);
-    sem_post_checked(&sem_fuse_go);
-    sem_post_checked(&sem_explosion_go);
-
+    /* Esperar a que controller_thread termine (cuando game_over) */
     pthread_join(th_controller, NULL);
+
+    /* Parar hilos fuse y explosion (controller ya los despertó con sem_post) */
     pthread_join(th_fuse, NULL);
     pthread_join(th_explosion, NULL);
 
