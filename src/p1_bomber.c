@@ -10,6 +10,7 @@
 #include "common.h"
 
 #include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -27,6 +28,11 @@ typedef struct {
     size_t head, tail, count;
     int finished;               /* el productor terminó (EOF o error) */
     int cancelled;              /* cierre solicitado por el proceso */
+    /* Métricas del productor-consumidor: protegidas por mutex. */
+    uint64_t producer_blocks;   /* sem_slots sin permiso inmediato */
+    uint64_t consumer_blocks;   /* sem_items sin permiso inmediato */
+    uint64_t enqueued, dequeued;
+    size_t max_depth;
     pthread_mutex_t mutex;
     sem_t slots;                /* espacios disponibles */
     sem_t items;                /* elementos disponibles + señal de EOF */
@@ -72,10 +78,32 @@ static void queue_destroy(instruction_queue_t *q)
     if (rc != 0) fprintf(stderr, "[P1] mutex_destroy(cola): %s\n", strerror(rc));
 }
 
+
+/* Intenta adquirir sin bloquear. Si no hay permiso, registra la espera y
+ * pasa a sem_wait_retry; en ningún caso se conserva el mutex al esperar.
+ * Cada contador mide cuántas veces se encontró un semáforo sin permisos. */
+static void queue_wait_counted(instruction_queue_t *q, sem_t *sem, int producer)
+{
+    for (;;) {
+        if (sem_trywait(sem) == 0) return;
+        if (errno == EINTR) continue;
+        if (errno != EAGAIN) {
+            perror("[P1] sem_trywait(cola)");
+            _exit(EXIT_FAILURE);
+        }
+        lock(&q->mutex);
+        if (producer) q->producer_blocks++;
+        else          q->consumer_blocks++;
+        unlock(&q->mutex);
+        sem_wait_retry(sem);
+        return;
+    }
+}
+
 static int queue_push(instruction_queue_t *q, const instr_t *item)
 {
     /* Esperar SIN retener el mutex: de lo contrario el consumidor no podría liberar espacio. */
-    sem_wait_retry(&q->slots);
+    queue_wait_counted(q, &q->slots, 1);
     lock(&q->mutex);
     if (q->cancelled) {
         unlock(&q->mutex);
@@ -84,6 +112,8 @@ static int queue_push(instruction_queue_t *q, const instr_t *item)
     q->entries[q->tail] = *item;
     q->tail = (q->tail + 1) % P1_QUEUE_CAPACITY;
     q->count++;
+    q->enqueued++;
+    if (q->count > q->max_depth) q->max_depth = q->count;
     unlock(&q->mutex);
     sem_post_checked(&q->items);
     return 0;
@@ -120,7 +150,7 @@ static int queue_pop(instruction_queue_t *q, instr_t *out)
     if (stopped) return -1;
     if (drained) return 0;
 
-    sem_wait_retry(&q->items);
+    queue_wait_counted(q, &q->items, 0);
     lock(&q->mutex);
     if (q->cancelled) {
         unlock(&q->mutex);
@@ -134,6 +164,7 @@ static int queue_pop(instruction_queue_t *q, instr_t *out)
     *out = q->entries[q->head];
     q->head = (q->head + 1) % P1_QUEUE_CAPACITY;
     q->count--;
+    q->dequeued++;
     unlock(&q->mutex);
     sem_post_checked(&q->slots);
     return 1;
@@ -359,6 +390,13 @@ void p1_main(shared_state_t *st)
     sem_post_checked(&ctx.publish_request);
     pthread_join(reader, NULL);
     pthread_join(publisher, NULL);
+    /* Con los hilos finalizados, los contadores se pueden leer sin carreras. */
+    log_line("[P1] COLA capacidad=%d encoladas=%" PRIu64
+             " consumidas=%" PRIu64 " max_ocupacion=%zu"
+             " bloqueos_reader=%" PRIu64 " bloqueos_executor=%" PRIu64,
+             P1_QUEUE_CAPACITY, ctx.queue.enqueued, ctx.queue.dequeued,
+             ctx.queue.max_depth, ctx.queue.producer_blocks,
+             ctx.queue.consumer_blocks);
     if (ctx.read_error) {
         log_line("[P1] ERROR leyendo bomber_moves.txt");
     }
