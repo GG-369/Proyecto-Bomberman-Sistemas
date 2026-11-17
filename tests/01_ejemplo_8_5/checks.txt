@@ -1,22 +1,6 @@
-[P0] caso
-[P0] mapa inicial
-[P0] los 3 procesos hijos están listos
-==================== TICK 1 ====================
-[P0] inicio: tick 1
-[P0] acción: turno -> P2 enemy_process
-[P0] bombas: turno -> P3 bomb_process
-[P0] cierre: sin eventos
-[P0] estado:
-==================== TICK 2 ====================
-[P0] inicio: tick 2
-[P0] acción: turno -> P2 enemy_process
-[P0] bombas: turno -> P3 bomb_process
-[P0] cierre: sin eventos
-[P0] estado:
-==================== TICK 9 ====================
-[P0] inicio: tick 9
-[P0] acción: turno -> P1 bomber_process
-[P0] bombas: turno -> P3 bomb_process
-[P0] cierre: sin eventos
-[P0] estado:
-RESULTADO LIMITE DE TICKS
+REPORTE ===== planificador P0 =====
+REPORTE turnos de acción: P1=0 (0%) P2=10 (100%) de 10
+REPORTE fases de bombas (P3): 10
+REPORTE racha más larga sin turno: P1=10 ticks P2=0 ticks
+REPORTE turnos otorgados por aging: 0
+REPORTE SET_PRIORITY P1: aceptadas=0 rechazadas=0 | P2: aceptadas=0 rechazadas=0

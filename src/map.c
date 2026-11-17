@@ -227,7 +227,13 @@ int map_load(const char *path, shared_state_t *st)
     st->map_h = row;
     for (int y = 0; y < row; y++) {
         for (int x = 0; x < cols; x++) {
-            st->map_grid[y][x] = grid[y][x];
+            char ch = grid[y][x];
+            /* Sección 7: celdas iniciales P y A-D quedan como camino libre (O) en map_grid */
+            if (ch == 'P' || (ch >= 'A' && ch <= 'D')) {
+                st->map_grid[y][x] = CELL_FREE;
+            } else {
+                st->map_grid[y][x] = ch;
+            }
         }
         free(grid[y]);
     }
