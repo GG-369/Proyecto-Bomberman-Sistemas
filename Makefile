@@ -8,6 +8,7 @@
 #   make valgrind                busca fugas de memoria con valgrind
 #   make helgrind                busca condiciones de carrera con valgrind --tool=helgrind
 #   make test_base               prueba de la Fase 1 (shm, mapa, parser)
+#   make stress                  prueba 12: estrés de la cola de P1 (5000 instrucciones, cola de 4)
 #   make clean
 
 CC      := gcc
@@ -24,7 +25,7 @@ BASE_OBJ := $(BASE_SRC:src/%.c=build/%.o)
 PROC_OBJ := $(PROC_SRC:src/%.c=build/%.o)
 HEADERS  := include/common.h
 
-.PHONY: all run render test tsan valgrind helgrind clean
+.PHONY: all run render test tsan valgrind helgrind stress clean
 
 all: bomberman bomberman_t6
 
@@ -45,6 +46,13 @@ bomberman_t6: src/*.c $(HEADERS)
 test_base: tests/unit/test_base.c $(BASE_OBJ)
 	$(CC) $(ALL_CFLAGS) -o $@ $^ $(LDLIBS)
 	./test_base tests/01_ejemplo_8_5/map.txt
+
+# Prueba 12: compila el p1_bomber.c real con la cola reducida a 4 espacios.
+test_p1_stress: tests/unit/test_p1_stress.c src/p1_bomber.c $(BASE_SRC) $(HEADERS)
+	$(CC) $(ALL_CFLAGS) -Wpedantic -Werror -DP1_QUEUE_CAPACITY=4 -o $@ tests/unit/test_p1_stress.c $(BASE_SRC) $(LDLIBS)
+
+stress: test_p1_stress
+	./test_p1_stress
 
 run: bomberman
 	./bomberman $(CASE)
@@ -68,4 +76,4 @@ helgrind: bomberman bomberman_t6
 	./scripts/run_tests.sh helgrind
 
 clean:
-	rm -rf build bomberman bomberman_t6 test_base
+	rm -rf build bomberman bomberman_t6 test_base test_p1_stress
