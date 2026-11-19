@@ -2,7 +2,7 @@
  * p3_bomb.c - P3 bomb_process.
  *
  * Tres hilos:
- *   1. controller_thread: espera sem_bomb_turn, lee buzón de bomba (m_mailbox),
+ *   1. bomb_controller_thread: espera sem_bomb_turn, lee buzón de bomba (m_mailbox),
  *      registra bomba si hay slot libre y celda válida, responde sem_turn_done.
  *   2. fuse_thread: espera semáforo privado, decrementa timers; cuando llega a 0,
  *      encola la bomba para explosión.
@@ -20,7 +20,7 @@
  *     2. Avanzar timers
  *     3. Explotar las que llegan a 0 (con reacción en cadena)
  *     4. Registrar la solicitud pendiente (y marcar Q en map_grid)
- * - Solo controller_thread hace sem_post(sem_turn_done) una vez al final de la fase.
+ * - Solo bomb_controller_thread hace sem_post(sem_turn_done) una vez al final de la fase.
  * - Validar que la celda no tenga ya bomba y sea transitable; marcar con Q.
  */
 #include "common.h"
@@ -79,16 +79,16 @@ static int dequeue_explosion(int *x, int *y)
 }
 
 /* ------------------------------------------------------------------ */
-/* controller_thread: registra bomba solicitada por P1                */
+/* bomb_controller_thread: registra bomba solicitada por P1                */
 /* ORDEN DE FASE (sección 8.2):
  *   1. Limpiar fuego del tick anterior
  *   2. Avanzar timers (fuse_thread)
  *   3. Explotar las que llegan a 0 (explosion_thread)
  *   4. Registrar solicitud pendiente (marcar Q)
- * Solo controller_thread hace sem_post(sem_turn_done) al final.
+ * Solo bomb_controller_thread hace sem_post(sem_turn_done) al final.
  */
 /* ------------------------------------------------------------------ */
-static void *controller_thread(void *arg)
+static void *bomb_controller_thread(void *arg)
 {
     (void)arg;
     for (;;) {
@@ -228,7 +228,7 @@ static void *fuse_thread(void *arg)
         }
         unlock(&g_st->m_map);
 
-        /* Avisar a controller_thread que terminó fuse */
+        /* Avisar a bomb_controller_thread que terminó fuse */
         sem_post_checked(&sem_fuse_done);
     }
     return NULL;
@@ -391,7 +391,7 @@ static void *explosion_thread(void *arg)
             unlock(&g_st->m_map);
         }
 
-        /* Avisar a controller_thread que terminó explosión */
+        /* Avisar a bomb_controller_thread que terminó explosión */
         sem_post_checked(&sem_explosion_done);
     }
     return NULL;
@@ -418,11 +418,11 @@ void p3_main(shared_state_t *st)
     sem_post_checked(&st->sem_turn_done);
 
     /* Crear hilos */
-    pthread_create(&th_controller, NULL, controller_thread, NULL);
+    pthread_create(&th_controller, NULL, bomb_controller_thread, NULL);
     pthread_create(&th_fuse, NULL, fuse_thread, NULL);
     pthread_create(&th_explosion, NULL, explosion_thread, NULL);
 
-    /* Esperar a que controller_thread termine (cuando game_over) */
+    /* Esperar a que bomb_controller_thread termine (cuando game_over) */
     pthread_join(th_controller, NULL);
 
     /* Parar hilos fuse y explosion (controller ya los despertó con sem_post) */
