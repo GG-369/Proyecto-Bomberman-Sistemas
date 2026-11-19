@@ -1,0 +1,4 @@
+# Fin por max_ticks con Round Robin
+max_ticks 6
+prio_bomber 30
+prio_enemy 30

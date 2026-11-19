@@ -1,0 +1,2 @@
+debe haber exactamente un 'P'
+se cancela la simulación

@@ -1,0 +1,3 @@
+falta o no se puede leer
+bomber_moves.txt
+se cancela la simulación

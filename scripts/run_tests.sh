@@ -4,8 +4,12 @@
 # Uso: ./scripts/run_tests.sh [tsan|valgrind|helgrind]
 #   sin args: ejecución normal
 #   tsan:     usa bomberman compilado con -fsanitize=thread
-#   valgrind: memcheck en los 4 procesos
+#   valgrind: memcheck en todos los procesos
 #   helgrind: detector de carreras
+#
+# Caso negativo: si la carpeta tiene expected_rc.txt, se espera ese código de
+# salida (por ejemplo 1 = error de inicialización), no se compara expected.txt
+# y solo se verifican las frases de checks.txt.
 
 set -euo pipefail
 
@@ -78,7 +82,12 @@ run_case() {
     local expected="$case_dir/expected.txt"
     local checks="$case_dir/checks.txt"
 
-    for f in "$map_file" "$bomber_moves" "$expected" "$checks"; do
+    local expected_rc=""
+    [[ -f "$case_dir/expected_rc.txt" ]] && expected_rc=$(tr -d '[:space:]' < "$case_dir/expected_rc.txt")
+
+    local required=("$map_file" "$bomber_moves" "$expected" "$checks")
+    [[ -n "$expected_rc" ]] && required=("$checks")
+    for f in "${required[@]}"; do
         if [[ ! -f "$f" ]]; then
             log_err "[$case_name] Falta archivo: $f"
             return 1
@@ -106,11 +115,36 @@ run_case() {
         return 1
     fi
 
-    if [[ "$MODE" == "valgrind" || "$MODE" == "helgrind" ]]; then
-        if [[ $exit_code -eq 42 ]]; then
-            log_err "[$case_name] $MODE detectó errores (ver logs/${case_name}.$MODE)"
+    # Ningún caso puede dejar la memoria compartida en /dev/shm
+    if [[ -e /dev/shm/bomberman_p2_shm ]]; then
+        log_err "[$case_name] Quedó /dev/shm/bomberman_p2_shm sin borrar"
+        rm -f /dev/shm/bomberman_p2_shm
+        return 1
+    fi
+
+    if [[ "$MODE" == "valgrind" || "$MODE" == "helgrind" ]] && [[ $exit_code -eq 42 ]]; then
+        log_err "[$case_name] $MODE detectó errores (ver logs/${case_name}.$MODE)"
+        return 1
+    fi
+
+    if [[ -n "$expected_rc" ]]; then
+        if [[ $exit_code -ne $expected_rc ]]; then
+            log_err "[$case_name] Código de salida $exit_code, se esperaba $expected_rc"
             return 1
         fi
+        while IFS= read -r pattern; do
+            [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
+            if ! grep -qF "$pattern" "$log_file"; then
+                log_err "[$case_name] Check fallido: '$pattern' no encontrado en log"
+                return 1
+            fi
+        done < "$checks"
+        log_ok "[$case_name] PASÓ (caso negativo, código $exit_code)"
+        return 0
+    fi
+
+    if [[ "$MODE" == "valgrind" || "$MODE" == "helgrind" ]]; then
+        :
     elif [[ $exit_code -ne 0 ]]; then
         log_err "[$case_name] Binario terminó con código $exit_code"
         return 1

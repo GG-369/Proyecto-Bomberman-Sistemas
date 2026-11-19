@@ -1,12 +1,29 @@
-/* Pruebas de Fase 1: 26 comprobaciones de SHM, mapa e instrucciones. */
+/* Pruebas de Fase 1: 31 comprobaciones de SHM, mapa e instrucciones
+ * (las 5 últimas validan mapas inválidos). */
 #include "common.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int checks;
+
+/* Escribe un mapa temporal, lo carga con map_load y devuelve su resultado. */
+static int load_text(shared_state_t *st, const char *text)
+{
+    char path[64];
+    snprintf(path, sizeof path, "/tmp/test_base_map_%d.txt", (int)getpid());
+    FILE *f = fopen(path, "w");
+    if (f == NULL)
+        return -2;
+    fputs(text, f);
+    fclose(f);
+    int rc = map_load(path, st);
+    unlink(path);
+    return rc;
+}
 
 #define CHECK(expression) do {                                             \
     if (!(expression)) {                                                   \
@@ -65,9 +82,16 @@ int main(int argc, char **argv)
     int dx = 0, dy = 0;
     CHECK(instr_delta(INSTR_LEFT, &dx, &dy) == 1 && dx == -1 && dy == 0); /* 26 */
 
+    /* Validación de mapas (los mensajes de error de map_load son esperados) */
+    CHECK(load_text(st, "XXXXX\nXPOAX\nXOOOX\nXOOOX\nXXXXX\n") == 0);  /* 27 válido */
+    CHECK(load_text(st, "XXXXX\nXPZAX\nXOOOX\nXOOOX\nXXXXX\n") == -1); /* 28 símbolo */
+    CHECK(load_text(st, "XXXXX\nXOOAX\nXOOOX\nXOOOX\nXXXXX\n") == -1); /* 29 sin P */
+    CHECK(load_text(st, "XXXXX\nXPOAX\nXOOX\nXOOOX\nXXXXX\n") == -1);  /* 30 fila corta */
+    CHECK(map_load("/tmp/no_existe_test_base.txt", st) == -1);            /* 31 sin archivo */
+
 cleanup:
     if (st != NULL) shm_destroy(st);
     if (failed) return EXIT_FAILURE;
-    printf("OK: test_base %d/26 comprobaciones\n", checks);
+    printf("OK: test_base %d/31 comprobaciones\n", checks);
     return EXIT_SUCCESS;
 }
