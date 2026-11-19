@@ -53,6 +53,7 @@ int map_load(const char *path, shared_state_t *st)
     }
 
     char *grid[MAX_Y];
+    int allocated = 0;   /* filas reservadas: se liberan en cualquier error */
     int row = 0, cols = -1;
     int bomber_count = 0;
     int enemy_seen[4] = {0};
@@ -72,8 +73,7 @@ int map_load(const char *path, shared_state_t *st)
             *end = '\0';
             if (row >= MAX_Y) {
                 fprintf(stderr, "[P0] map_load: más de %d filas (máx. %d)\n", MAX_Y, MAX_Y);
-                close(fd);
-                return -1;
+                goto fail_fd;
             }
             size_t len = end - start;
             if (len == 0) {
@@ -85,22 +85,20 @@ int map_load(const char *path, shared_state_t *st)
                 if (cols < MIN_DIM || cols > MAX_X) {
                     fprintf(stderr, "[P0] map_load: ancho %d fuera de rango [%d..%d]\n",
                             cols, MIN_DIM, MAX_X);
-                    close(fd);
-                    return -1;
+                    goto fail_fd;
                 }
             } else if ((int)len != cols) {
                 fprintf(stderr, "[P0] map_load: fila %d tiene ancho %zu, se esperaba %d\n",
                         row + 1, len, cols);
-                close(fd);
-                return -1;
+                goto fail_fd;
             }
 
             grid[row] = malloc(len + 1);
             if (!grid[row]) {
                 fprintf(stderr, "[P0] map_load: malloc falló\n");
-                close(fd);
-                return -1;
+                goto fail_fd;
             }
+            allocated = row + 1;
             memcpy(grid[row], start, len);
             grid[row][len] = '\0';
 
@@ -110,8 +108,7 @@ int map_load(const char *path, shared_state_t *st)
                 if (!is_valid_map_char(ch)) {
                     fprintf(stderr, "[P0] map_load: fila %d col %d: carácter inválido '%c' (0x%02x)\n",
                             row + 1, c + 1, ch, (unsigned char)ch);
-                    close(fd);
-                    return -1;
+                    goto fail_fd;
                 }
                 if (ch == 'P') {
                     bomber_count++;
@@ -121,8 +118,7 @@ int map_load(const char *path, shared_state_t *st)
                     int idx = ch - 'A';
                     if (enemy_seen[idx]) {
                         fprintf(stderr, "[P0] map_load: enemigo duplicado '%c'\n", ch);
-                        close(fd);
-                        return -1;
+                        goto fail_fd;
                     }
                     enemy_seen[idx] = 1;
                     st->enemy_x[idx] = c;
@@ -146,37 +142,33 @@ int map_load(const char *path, shared_state_t *st)
 
     if (n == -1) {
         fprintf(stderr, "[P0] map_load: error leyendo %s: %s\n", path, strerror(errno));
-        close(fd);
-        return -1;
+        goto fail_fd;
     }
 
     /* Procesar última línea sin \n */
     if (buf_len > 0) {
         if (row >= MAX_Y) {
             fprintf(stderr, "[P0] map_load: más de %d filas\n", MAX_Y);
-            close(fd);
-            return -1;
+            goto fail_fd;
         }
         if (cols == -1) {
             cols = (int)buf_len;
             if (cols < MIN_DIM || cols > MAX_X) {
                 fprintf(stderr, "[P0] map_load: ancho %d fuera de rango [%d..%d]\n",
                         cols, MIN_DIM, MAX_X);
-                close(fd);
-                return -1;
+                goto fail_fd;
             }
         } else if ((int)buf_len != cols) {
             fprintf(stderr, "[P0] map_load: última fila ancho %zu, se esperaba %d\n",
                     buf_len, cols);
-            close(fd);
-            return -1;
+            goto fail_fd;
         }
         grid[row] = malloc(buf_len + 1);
         if (!grid[row]) {
             fprintf(stderr, "[P0] map_load: malloc falló\n");
-            close(fd);
-            return -1;
+            goto fail_fd;
         }
+        allocated = row + 1;
         memcpy(grid[row], buf, buf_len);
         grid[row][buf_len] = '\0';
 
@@ -185,8 +177,7 @@ int map_load(const char *path, shared_state_t *st)
             if (!is_valid_map_char(ch)) {
                 fprintf(stderr, "[P0] map_load: fila %d col %d: carácter inválido '%c'\n",
                         row + 1, c + 1, ch);
-                close(fd);
-                return -1;
+                goto fail_fd;
             }
             if (ch == 'P') {
                 bomber_count++;
@@ -196,8 +187,7 @@ int map_load(const char *path, shared_state_t *st)
                 int idx = ch - 'A';
                 if (enemy_seen[idx]) {
                     fprintf(stderr, "[P0] map_load: enemigo duplicado '%c'\n", ch);
-                    close(fd);
-                    return -1;
+                    goto fail_fd;
                 }
                 enemy_seen[idx] = 1;
                 st->enemy_x[idx] = c;
@@ -215,15 +205,15 @@ int map_load(const char *path, shared_state_t *st)
 
     if (row < MIN_DIM) {
         fprintf(stderr, "[P0] map_load: menos de %d filas (mín. %d)\n", MIN_DIM, MIN_DIM);
-        return -1;
+        goto fail;
     }
     if (bomber_count != 1) {
         fprintf(stderr, "[P0] map_load: debe haber exactamente un 'P' (Bomberman), hay %d\n", bomber_count);
-        return -1;
+        goto fail;
     }
     if (enemy_count > NUM_ENEMIES) {
         fprintf(stderr, "[P0] map_load: máximo %d enemigos (A-D), hay %d\n", NUM_ENEMIES, enemy_count);
-        return -1;
+        goto fail;
     }
 
     /* Copiar a shared_state_t (bajo m_map, pero P0 aún no ha hecho fork, así que sin lock) */
@@ -269,6 +259,13 @@ int map_load(const char *path, shared_state_t *st)
     log_line("[P0] mapa cargado: %dx%d, Bomberman en (%d,%d), %d enemigos, %d power-ups",
              st->map_w, st->map_h, st->bomber_x, st->bomber_y, st->enemies_alive, st->powerup_count);
     return 0;
+
+fail_fd:
+    close(fd);
+fail:
+    for (int i = 0; i < allocated; i++)
+        free(grid[i]);
+    return -1;
 }
 
 /*
