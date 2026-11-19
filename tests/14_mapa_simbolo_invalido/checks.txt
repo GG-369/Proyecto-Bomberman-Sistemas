@@ -1,0 +1,2 @@
+carácter inválido 'Z'
+se cancela la simulación

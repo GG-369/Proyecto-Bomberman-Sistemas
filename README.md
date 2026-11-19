@@ -51,6 +51,7 @@ Ctrl+C termina la simulación en orden: P0 marca `game_over`, despierta a los hi
 | `expected.txt` | Líneas `RESUMEN` (una por tick) y `RESULTADO` que debe producir el caso |
 | `checks.txt` | Frases que deben aparecer en el log |
 | `binary.txt` (opcional) | Binario a usar, si no es `./bomberman` |
+| `expected_rc.txt` (opcional) | Caso negativo: código de salida esperado; no se compara `expected.txt`, solo `checks.txt` |
 
 ## Mejoras originales
 
@@ -67,9 +68,7 @@ Al terminar, P0 imprime métricas de planificación en líneas `REPORTE`: turnos
 P1 cuenta cuántas veces el lector se bloqueó en `sem_slots` (cola llena) y el ejecutor en `sem_items` (cola vacía), además de las instrucciones encoladas y consumidas y la ocupación máxima. Lo imprime al terminar (`[P1] COLA ...`). La prueba compila el `p1_bomber.c` real con la cola reducida a 4 espacios y le pasa 5000 instrucciones: verifica el orden FIFO, que no se pierda ninguna y que no haya bloqueos permanentes.
 
 ```bash
-gcc -std=gnu11 -O2 -g -Wall -Wextra -Wpedantic -Werror -pthread -DP1_QUEUE_CAPACITY=4 -Iinclude \
-    tests/unit/test_p1_stress.c src/util.c src/shm.c src/map.c src/instr.c -o /tmp/test_p1_stress
-/tmp/test_p1_stress
+make stress
 ```
 
 ### Power-ups `+` (opcional de la sección 7)
@@ -83,8 +82,9 @@ Si Bomberman pisa un `+`, su siguiente bomba tiene alcance 3 en vez de 2. `map.c
 ## Pruebas
 
 ```bash
-make test        # los 15 casos de tests/; compara con expected.txt y checks.txt
-make test_base   # prueba unitaria del mapa y del parser
+make test        # los 18 casos de tests/ (15 de simulación + 3 negativos); compara con expected.txt y checks.txt
+make test_base   # prueba unitaria del mapa y del parser (31 comprobaciones)
+make stress      # prueba 12: estrés de la cola de P1
 make valgrind    # memcheck en todos los procesos (fugas y accesos inválidos)
 make helgrind    # detector de carreras de valgrind
 make tsan        # recompila con -fsanitize=thread y corre los casos
@@ -92,7 +92,7 @@ make tsan        # recompila con -fsanitize=thread y corre los casos
 
 En WSL, ThreadSanitizer necesita desactivar ASLR: `setarch $(uname -m) -R make tsan`.
 
-Cada caso tiene un límite de tiempo (`CASE_TIMEOUT`, 120 s por defecto): si algún proceso se cuelga, el caso falla en vez de dejar `make test` bloqueado.
+Cada caso tiene un límite de tiempo (`CASE_TIMEOUT`, 120 s por defecto): si algún proceso se cuelga, el caso falla en vez de dejar `make test` bloqueado. Además, ningún caso puede dejar `/dev/shm/bomberman_p2_shm` sin borrar.
 
 | Caso | Qué demuestra |
 |---|---|
@@ -108,8 +108,11 @@ Cada caso tiene un límite de tiempo (`CASE_TIMEOUT`, 120 s por defecto): si alg
 | 10_aging | Opcional: aging contra la inanición |
 | 11_reporte_scheduler | Mejora de P0: el reporte mide la inanición (P1 con 0 turnos y una racha de 10) |
 | 13_powerup | Mejora de P3: la bomba con power-up tiene alcance 3 |
-| unit/test_base.c | Mapa y parser (26 comprobaciones) |
-| unit/test_p1_stress.c | Mejora de P1: 5000 instrucciones con una cola de 4 espacios |
+| 14_mapa_simbolo_invalido | Caso negativo: símbolo `Z` en el mapa → código 1, sin dejar `/dev/shm` |
+| 15_mapa_sin_bomberman | Caso negativo: mapa sin `P` → código 1 |
+| 16_archivo_faltante | Caso negativo: falta `bomber_moves.txt` → código 1 antes del `fork()` |
+| unit/test_base.c | Mapa y parser (31 comprobaciones, 5 con mapas inválidos) |
+| unit/test_p1_stress.c (prueba 12, `make stress`) | Mejora de P1: 5000 instrucciones con una cola de 4 espacios |
 
 **Por qué existe `bomberman_t6`:** con `BOMB_TIMER = 3` es imposible pedir una tercera bomba mientras hay 2 activas. Bomberman hace una acción por tick y no puede poner dos bombas en la misma celda, así que la segunda bomba llega como pronto en el tick t+2 y la tercera en t+4. Para entonces la primera ya explotó en t+3, en el paso 3, antes del registro del paso 4. Por eso la prueba 07 usa un binario compilado con `-DBOMB_TIMER=6`. En el código, `BOMB_TIMER` sigue siendo una constante.
 
@@ -121,13 +124,14 @@ src/main.c             arranque de P0: config, shm, mapa, dup/dup2, SIGINT, fork
 src/p0_scheduler.c     P0: tick, scheduler, signal, event (prioridades, RR, aging, cierre, reporte)
 src/p1_bomber.c        P1: reader, executor, publisher (cola productor-consumidor con métricas)
 src/p2_enemy.c         P2: controller, enemy_thread x4, tracker, collision, publisher
-src/p3_bomb.c          P3: controller, fuse, explosion (cadena, bloques, daño, power-ups)
+src/p3_bomb.c          P3: bomb_controller, fuse, explosion (cadena, bloques, daño, power-ups)
 src/p4_renderer.c      P4: render ANSI sincronizado al tick
 src/shm.c              shm_open/ftruncate/mmap, sem_init(pshared=1), mutex compartidos
 src/map.c              carga y validación de map.txt, power-ups
 src/instr.c            parser de instrucciones
 scripts/run_tests.sh   corre los casos y los compara con expected.txt y checks.txt
-tests/                 15 casos + pruebas unitarias (tests/unit/)
+tests/                 18 casos + pruebas unitarias (tests/unit/)
+experimentos/          experimentos con y sin cada primitiva (ver experimentos/README.md)
 ```
 
 ## Decisiones de diseño (aprobadas por el grupo)
@@ -140,6 +144,9 @@ tests/                 15 casos + pruebas unitarias (tests/unit/)
 6. **Línea desconocida.** Se reporta en consola y se descarta sin consumir turno.
 7. **Fuego y bloques.** Un bloque `#` alcanzado pasa a `O` (no a `*`) y detiene el fuego en esa dirección. El fuego que llega a otra bomba la hace explotar en el mismo tick.
 8. **Hilos internos con semáforos privados.** Dentro de cada proceso, los hilos se coordinan con semáforos `pshared = 0`. Solo un hilo por proceso usa `sem_turn_done` para avisar a P0, y al terminar el juego ese mismo hilo detiene a los demás.
+
+9. **Archivos de movimientos obligatorios.** Antes del `fork()`, P0 verifica que existan `bomber_moves.txt` y el archivo de cada enemigo presente en el mapa; si falta alguno, cancela con código 1.
+10. **Power-ups.** Es la única excepción al escritor único: P0 los carga, P1 los activa al recogerlos y P3 los consume al registrar la bomba, siempre con `m_map`. Hasta 32 por mapa; el efecto no se acumula.
 
 ## Orden de los mutex (evita deadlocks)
 

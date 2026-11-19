@@ -1,0 +1,194 @@
+{
+ "e1": {
+  "base|02_round_robin": {
+   "n": 500,
+   "pct_dirty": 0.0,
+   "mean_dirty": 0,
+   "max_dirty": 0,
+   "turns": 6,
+   "correct": 500
+  },
+  "base|05_colision_y_explosion": {
+   "n": 500,
+   "pct_dirty": 0.0,
+   "mean_dirty": 0,
+   "max_dirty": 0,
+   "turns": 2,
+   "correct": 500
+  },
+  "base|08b_derrota": {
+   "n": 500,
+   "pct_dirty": 0.0,
+   "mean_dirty": 0,
+   "max_dirty": 0,
+   "turns": 3,
+   "correct": 500
+  },
+  "nobar|02_round_robin": {
+   "n": 500,
+   "pct_dirty": 64.8,
+   "mean_dirty": 1.084,
+   "max_dirty": 5,
+   "turns": 6,
+   "correct": 454
+  },
+  "nobar|05_colision_y_explosion": {
+   "n": 500,
+   "pct_dirty": 4.6,
+   "mean_dirty": 0.046,
+   "max_dirty": 1,
+   "turns": 2,
+   "correct": 496
+  },
+  "nobar|08b_derrota": {
+   "n": 500,
+   "pct_dirty": 4.0,
+   "mean_dirty": 0.04,
+   "max_dirty": 1,
+   "turns": 3.0,
+   "correct": 496
+  }
+ },
+ "e2": {
+  "mutex": {
+   "n": 500,
+   "sin_salida": 0,
+   "perdidas_mean": 0,
+   "perdidas_min": 0,
+   "perdidas_max": 0,
+   "pct_integras": 100.0,
+   "count_final_distinto": 0,
+   "fifo": 0,
+   "corte": 0
+  },
+  "nomutex": {
+   "n": 500,
+   "sin_salida": 22,
+   "perdidas_mean": 47954.9,
+   "perdidas_min": 5425,
+   "perdidas_max": 49999,
+   "pct_integras": 0.0,
+   "count_final_distinto": 460,
+   "fifo": 0,
+   "corte": 478
+  }
+ },
+ "e3": {
+  "old": {
+   "n": 1500,
+   "colgados": 58,
+   "casos": [
+    "02_round_robin",
+    "03_inanicion",
+    "05_colision_y_explosion",
+    "06_prioridad_y_lineas_invalidas",
+    "07_max_bombs",
+    "08a_victoria",
+    "08b_derrota",
+    "08c_max_ticks",
+    "09_paredes_y_celdas",
+    "10_aging",
+    "11_reporte_scheduler",
+    "13_powerup"
+   ],
+   "ms_mediana": 29.0,
+   "ms_p99": 10009
+  },
+  "clean": {
+   "n": 1500,
+   "colgados": 0,
+   "casos": [],
+   "ms_mediana": 21.0,
+   "ms_p99": 38
+  }
+ },
+ "e4": {
+  "base": {
+   "n": 50,
+   "colgados": 0,
+   "ms_media": 11.4
+  },
+  "norel": {
+   "n": 50,
+   "colgados": 50,
+   "ms_media": 3010.2
+  }
+ },
+ "recursos": {
+  "01_ejemplo_8_5": {
+   "seg": 0.018,
+   "cpu": 103,
+   "rss": 1902
+  },
+  "02_round_robin": {
+   "seg": 0.021,
+   "cpu": 92,
+   "rss": 1910
+  },
+  "03_inanicion": {
+   "seg": 0.019,
+   "cpu": 102,
+   "rss": 1900
+  },
+  "04_reaccion_cadena": {
+   "seg": 0.009,
+   "cpu": 106,
+   "rss": 1900
+  },
+  "05_colision_y_explosion": {
+   "seg": 0.003,
+   "cpu": 112,
+   "rss": 1909
+  },
+  "06_prioridad_y_lineas_invalidas": {
+   "seg": 0.01,
+   "cpu": 108,
+   "rss": 1915
+  },
+  "07_max_bombs": {
+   "seg": 0.01,
+   "cpu": 107,
+   "rss": 1893
+  },
+  "08a_victoria": {
+   "seg": 0.02,
+   "cpu": 73,
+   "rss": 1890
+  },
+  "08b_derrota": {
+   "seg": 0.004,
+   "cpu": 124,
+   "rss": 1896
+  },
+  "08c_max_ticks": {
+   "seg": 0.01,
+   "cpu": 113,
+   "rss": 1884
+  },
+  "08d_sin_instrucciones": {
+   "seg": 0.001,
+   "cpu": 121,
+   "rss": 1909
+  },
+  "09_paredes_y_celdas": {
+   "seg": 0.01,
+   "cpu": 102,
+   "rss": 1909
+  },
+  "10_aging": {
+   "seg": 0.011,
+   "cpu": 99,
+   "rss": 1900
+  },
+  "11_reporte_scheduler": {
+   "seg": 0.013,
+   "cpu": 103,
+   "rss": 1909
+  },
+  "13_powerup": {
+   "seg": 0.022,
+   "cpu": 89,
+   "rss": 1909
+  }
+ }
+}

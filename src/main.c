@@ -176,6 +176,30 @@ static int install_sigint(void)
     return 0;
 }
 
+/* Valida que existan los archivos de movimientos que se van a leer: el de
+ * Bomberman y el de cada enemigo presente en el mapa (un enemigo ausente no
+ * lee instrucciones). Se hace antes del fork para cancelar con código 1. */
+static int check_moves_files(const shared_state_t *st, const char *dir)
+{
+    char path[PATH_LEN + 32];
+    int ok = 1;
+    snprintf(path, sizeof path, "%s/bomber_moves.txt", dir);
+    if (access(path, R_OK) == -1) {
+        fprintf(stderr, "[P0] falta o no se puede leer %s: %s\n", path, strerror(errno));
+        ok = 0;
+    }
+    for (int i = 0; i < NUM_ENEMIES; i++) {
+        if (!st->enemy_alive[i])
+            continue;
+        snprintf(path, sizeof path, "%s/enemy_%d_moves.txt", dir, i + 1);
+        if (access(path, R_OK) == -1) {
+            fprintf(stderr, "[P0] falta o no se puede leer %s: %s\n", path, strerror(errno));
+            ok = 0;
+        }
+    }
+    return ok ? 0 : -1;
+}
+
 typedef void (*child_fn)(shared_state_t *);
 
 static void p4_entry(shared_state_t *st);
@@ -225,7 +249,8 @@ int main(int argc, char **argv)
     snprintf(st->case_dir, sizeof st->case_dir, "%s", opt.case_dir);
     char map_path[PATH_LEN + 16];
     snprintf(map_path, sizeof map_path, "%s/map.txt", opt.case_dir);
-    if (load_config(st, opt.case_dir) == -1 || map_load(map_path, st) == -1) {
+    if (load_config(st, opt.case_dir) == -1 || map_load(map_path, st) == -1 ||
+        check_moves_files(st, opt.case_dir) == -1) {
         fprintf(stderr, "[P0] error de inicialización: se cancela la simulación\n");
         shm_destroy(st);
         return EXIT_FAILURE;

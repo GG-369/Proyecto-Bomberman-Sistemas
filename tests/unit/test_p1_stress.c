@@ -1,5 +1,5 @@
 /*
- * T11 - Prueba de estrés de la cola real de P1 (5000 instrucciones, 4 slots).
+ * Prueba 12 - Estrés de la cola real de P1 (5000 instrucciones, 4 slots).
  * Incluimos p1_bomber.c deliberadamente para comprobar sus funciones static;
  * no duplicamos una implementación diferente de la cola.
  * Compilar con -DP1_QUEUE_CAPACITY=4.
